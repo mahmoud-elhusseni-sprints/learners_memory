@@ -1,0 +1,22 @@
+{
+  "title": "Learner Memory — Pipeline",
+  "uid": "learner-memory-pipeline",
+  "timezone": "browser",
+  "refresh": "30s",
+  "panels": [
+    {"type": "timeseries", "title": "API request rate", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+     "targets": [{"expr": "sum by (handler) (rate(http_requests_total[5m]))"}]},
+    {"type": "timeseries", "title": "API latency p95", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+     "targets": [{"expr": "histogram_quantile(0.95, sum by (le, handler) (rate(http_request_duration_seconds_bucket[5m])))"}]},
+    {"type": "timeseries", "title": "Celery tasks by state", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+     "targets": [{"expr": "sum by (name, state) (rate(celery_task_total[5m]))"}]},
+    {"type": "timeseries", "title": "Queue length", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+     "targets": [{"expr": "celery_queue_length"}]},
+    {"type": "stat", "title": "Task failures (1h)", "gridPos": {"h": 6, "w": 8, "x": 0, "y": 16},
+     "targets": [{"expr": "sum(increase(celery_task_failed_total[1h]))"}]},
+    {"type": "timeseries", "title": "Task runtime p95", "gridPos": {"h": 6, "w": 16, "x": 8, "y": 16},
+     "targets": [{"expr": "histogram_quantile(0.95, sum by (le, name) (rate(celery_task_runtime_bucket[5m])))"}]}
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

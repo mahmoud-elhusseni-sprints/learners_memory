@@ -1,0 +1,12 @@
+Source: a segment of a meeting transcript. Turns are "SPEAKER: text".
+The learner speaks as: {{ speaker_label }}
+Occurred at: {{ occurred_at }}
+
+Only extract evidence about the learner's own turns. Other participants are
+context — never attribute their statements or skills to the learner.
+
+--- TRANSCRIPT ---
+{{ chunk }}
+--- END TRANSCRIPT ---
+
+Return JSON matching the ExtractionResult schema.

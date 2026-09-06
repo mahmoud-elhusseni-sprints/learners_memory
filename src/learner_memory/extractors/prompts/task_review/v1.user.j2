@@ -1,0 +1,13 @@
+Source: a reviewer's assessment of a task the learner submitted.
+Task: {{ task_title or "unknown" }} · iteration {{ iteration or 1 }} · verdict {{ verdict or "n/a" }}
+Occurred at: {{ occurred_at }}
+
+Weigh the reviewer's concrete observations over their adjectives. Rework requested
+on the same issue across iterations is evidence about follow-through and attention
+to detail, not only about the technical skill.
+
+--- REVIEW ---
+{{ chunk }}
+--- END REVIEW ---
+
+Return JSON matching the ExtractionResult schema.
