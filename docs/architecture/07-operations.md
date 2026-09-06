@@ -126,7 +126,7 @@ guesswork.
 | `api` | 8000 | FastAPI, hot-reload, `/metrics` |
 | `worker-extract` / `worker-profile` / `worker-maintenance` | — | Celery workers, one per queue group |
 | `beat` | — | scheduler, exactly one replica |
-| `postgres` | 5433 → 5432 | profile + ledger |
+| `postgres` | 55432 → 5432 | profile + ledger |
 | `redis` | 6380 → 6379 | broker |
 | `prometheus` | 9092 → 9090 | scrapes api + celery-exporter |
 | `celery-exporter` | 9808 | queue depth, task rates, runtimes |
