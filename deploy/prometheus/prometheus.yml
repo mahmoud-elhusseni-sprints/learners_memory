@@ -12,9 +12,8 @@ scrape_configs:
     static_configs:
       - targets: ["celery-exporter:9808"]
 
-  - job_name: qdrant
-    static_configs:
-      - targets: ["qdrant:6333"]
+  # Qdrant is a remote managed cluster — scrape it from wherever that lives,
+  # not from this compose network.
 
   - job_name: prometheus
     static_configs:

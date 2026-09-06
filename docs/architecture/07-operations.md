@@ -126,15 +126,19 @@ guesswork.
 | `api` | 8000 | FastAPI, hot-reload, `/metrics` |
 | `worker-extract` / `worker-profile` / `worker-maintenance` | — | Celery workers, one per queue group |
 | `beat` | — | scheduler, exactly one replica |
-| `postgres` | 5432 | profile + ledger |
-| `redis` | 6379 | broker |
-| `qdrant` | 6333 | card index |
-| `storage` | 5000 | Supabase Storage API (file backend, single bucket) |
-| `studio` / `meta` | 3001 | Supabase Studio for poking at data |
-| `prometheus` | 9090 | scrapes api + celery-exporter + qdrant |
+| `postgres` | 5433 → 5432 | profile + ledger |
+| `redis` | 6380 → 6379 | broker |
+| `prometheus` | 9092 → 9090 | scrapes api + celery-exporter |
 | `celery-exporter` | 9808 | queue depth, task rates, runtimes |
-| `grafana` | 3000 | provisioned datasource + pipeline dashboard (admin/admin) |
+| `grafana` | 3002 → 3000 | provisioned datasource + pipeline dashboard (admin/admin) |
 
-LiteLLM and Langfuse are **not** in the compose file — both are shared platform
-services, pointed at through `.env`. Run `make init` for first-time setup
+Host ports are remapped where the default collides with another stack on the
+same machine (langfuse holds 3000/6379/9090, lc-postgres holds 5432). Inside
+the compose network every service still listens on its standard port.
+
+Qdrant (managed cluster), Supabase Storage (hosted project), LiteLLM and
+Langfuse are **not** in the compose file — all shared or remote services,
+pointed at through `.env`. The compose stack pins only
+`DATABASE_URL` and `REDIS_URL`; the rest of the URLs come from your `.env` as
+written. Run `make init` for first-time setup
 (compose up → alembic upgrade → seed taxonomy → bootstrap Qdrant/bucket).

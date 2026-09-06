@@ -11,7 +11,7 @@ learner-memory/
 │   ├── prometheus/prometheus.yml
 │   └── grafana/{provisioning,dashboards}
 ├── docker-compose.yml                    # api · workers · beat · pg · redis ·
-│                                         # qdrant · supabase storage · prom · grafana
+│                                         # prom · grafana (qdrant + storage remote)
 ├── scripts/{seed_taxonomy.py,bootstrap.py}
 ├── src/learner_memory/
 │   ├── main.py                     # app factory + lifespan (loads extractors,
