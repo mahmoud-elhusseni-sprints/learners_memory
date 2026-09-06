@@ -36,7 +36,7 @@ class LearnerRepository(Repository[Learner]):
             "cohort_id": cohort_id,
             "status": "active",
             "registered_at": datetime.now(UTC),
-            "metadata": metadata or {},
+            "metadata_": metadata or {},
         }
         stmt = (
             insert(Learner)
