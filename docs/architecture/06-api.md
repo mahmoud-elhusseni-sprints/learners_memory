@@ -14,7 +14,6 @@ GET  /v1/learners/{learner_id}
 ```jsonc
 // POST /v1/learners
 { "id": "0f7c...-uuid-issued-by-learn-os",   // stored verbatim as the PK
-  "external_user_id": "usr_8812",            // optional secondary key
   "display_name": "…", "program_id": "…", "cohort_id": "…", "metadata": {} }
 ```
 The learner id is **never generated here**. The upstream learn-os service issues
@@ -26,9 +25,10 @@ Registration also creates the empty personal-data and profile rows, so reads
 never have to special-case a learner who has been registered but not yet
 processed.
 
-Ingest accepts `learner_ref` as **either** `learner_id` or `external_user_id`;
-both resolve to the same row. Evidence for a learner who is not yet registered
-is archived and parked at `pending_identity` rather than rejected.
+Ingest identifies the learner by that same `learner_id` — it is the only
+learner key in the system, so producers must carry the learn-os uuid. Evidence
+for a learner who is not yet registered is archived and parked at
+`pending_identity` rather than rejected.
 
 ### Ingestion (scope `memory:write`)
 ```
@@ -39,7 +39,7 @@ GET  /v1/ingest/documents/{id}           # status, error, produced card ids
 POST /v1/ingest/documents/{id}/reprocess # force re-extraction
 ```
 Headers: `Idempotency-Key` (optional; content hash used otherwise).
-Body envelope is identical across sources — `learner_ref`, `occurred_at`,
+Body envelope is identical across sources — `learner_id`, `occurred_at`,
 `external_id`, `metadata`, `payload|file` — so producers integrate once.
 
 ### Memory (scope `memory:read`)

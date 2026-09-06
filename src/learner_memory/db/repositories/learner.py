@@ -17,7 +17,6 @@ class LearnerRepository(Repository[Learner]):
         self,
         *,
         learner_id: uuid.UUID,
-        external_user_id: str | None = None,
         display_name: str | None = None,
         program_id: uuid.UUID | None = None,
         cohort_id: uuid.UUID | None = None,
@@ -32,7 +31,6 @@ class LearnerRepository(Repository[Learner]):
         values = {
             "id": learner_id,
             "organization_id": self.organization_id,
-            "external_user_id": external_user_id,
             "display_name": display_name,
             "program_id": program_id,
             "cohort_id": cohort_id,
@@ -46,7 +44,6 @@ class LearnerRepository(Repository[Learner]):
             .on_conflict_do_update(
                 index_elements=[Learner.id],
                 set_={
-                    "external_user_id": values["external_user_id"],
                     "display_name": values["display_name"],
                     "program_id": values["program_id"],
                     "cohort_id": values["cohort_id"],
@@ -72,21 +69,6 @@ class LearnerRepository(Repository[Learner]):
             )
             await self.session.flush()
         return learner, created
-
-    async def by_external_id(self, external_user_id: str) -> Learner | None:
-        res = await self.session.execute(
-            self._scoped().where(Learner.external_user_id == external_user_id)
-        )
-        return res.scalar_one_or_none()
-
-    async def resolve(self, *, learner_id: uuid.UUID | None = None,
-                      external_user_id: str | None = None) -> Learner | None:
-        """Ingest accepts either identifier; both resolve to the same row."""
-        if learner_id:
-            return await self.get(learner_id)
-        if external_user_id:
-            return await self.by_external_id(external_user_id)
-        return None
 
     async def list_active(self, limit: int = 1000, offset: int = 0) -> list[Learner]:
         res = await self.session.execute(

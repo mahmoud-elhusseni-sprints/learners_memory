@@ -60,10 +60,9 @@ card_contribution(                      -- flattened for cheap "what feeds X" qu
 ### Profile
 ```sql
 learner(                                -- id is SUPPLIED BY THE CALLER, stored verbatim
-  id uuid pk, organization_id uuid, external_user_id text, display_name text,
+  id uuid pk, organization_id uuid, display_name text,
   status text, program_id uuid, cohort_id uuid, registered_at timestamptz,
-  metadata jsonb,
-  unique(organization_id, external_user_id));
+  metadata jsonb);
 
 learner_personal_data(                  -- PII island, separately encrypted/auditable
   learner_id uuid pk, email citext, phone text, location jsonb,

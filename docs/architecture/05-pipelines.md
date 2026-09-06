@@ -45,8 +45,8 @@ Failure modes, handled explicitly:
   cards kept, invalid chunk recorded in `error`), document marked
   `extracted_partial` so a backfill can revisit just that chunk.
 - **Unknown learner** → document parked at `pending_identity`; it is picked up
-  once the learner is registered (`POST /v1/learners`), which resolves the
-  `external_user_id` and re-enqueues extraction.
+  once that `learner_id` is registered (`POST /v1/learners`), which re-enqueues
+  extraction.
 
 ## 5.3 Profile synthesis pipeline
 

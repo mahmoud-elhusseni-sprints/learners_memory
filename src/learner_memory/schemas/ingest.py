@@ -5,7 +5,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator
 
-from learner_memory.schemas.learner import LearnerRef
 from learner_memory.schemas.memory_card import SourceType
 
 
@@ -17,7 +16,7 @@ class IngestRequest(BaseModel):
     `build_context` untouched.
     """
 
-    learner_ref: LearnerRef
+    learner_id: uuid.UUID = Field(description="Learner id issued by the upstream learn-os service")
     occurred_at: datetime = Field(description="When the evidence happened, not when sent")
     external_id: str | None = Field(None, description="Producer's id, for dedupe")
     payload: str | dict | None = None
@@ -35,7 +34,7 @@ class IngestRequest(BaseModel):
 
 
 class UploadUrlRequest(BaseModel):
-    learner_ref: LearnerRef
+    learner_id: uuid.UUID
     occurred_at: datetime
     external_id: str | None = None
     mime_type: str | None = None

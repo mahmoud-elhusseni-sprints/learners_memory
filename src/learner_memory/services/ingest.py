@@ -51,10 +51,7 @@ class IngestService:
             return IngestResponse(document_id=existing.id, source_type=source_type,
                                   status=existing.status, duplicate=True)
 
-        learner = await self._learners.resolve(
-            learner_id=req.learner_ref.learner_id,
-            external_user_id=req.learner_ref.external_user_id,
-        )
+        learner = await self._learners.get(req.learner_id)
         document_id = uuid.uuid4()
         key = object_key(
             organization_id=self._org,
@@ -82,8 +79,7 @@ class IngestService:
             status="received" if learner else "pending_identity",
             metadata_={
                 **req.metadata,
-                **({"unresolved_learner_ref": req.learner_ref.model_dump(mode="json")}
-                   if not learner else {}),
+                **({"unresolved_learner_id": str(req.learner_id)} if not learner else {}),
             },
         )
         await self._docs.add(doc)

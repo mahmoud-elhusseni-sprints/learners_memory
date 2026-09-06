@@ -29,7 +29,6 @@ async def register_learner(
     auth.require("profile:write")
     learner, created = await repo.register(
         learner_id=body.id,
-        external_user_id=body.external_user_id,
         display_name=body.display_name,
         program_id=body.program_id,
         cohort_id=body.cohort_id,
