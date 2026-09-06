@@ -1,0 +1,9 @@
+Assessment taken at: {{ occurred_at }}
+{% if assessment_name %}Assessment: {{ assessment_name }}{% endif %}
+{% if role_target %}Assessed against role: {{ role_target }}{% endif %}
+
+--- ASSESSMENT ---
+{{ chunk }}
+--- END ASSESSMENT ---
+
+Return JSON matching the AssessmentAnalysis schema.
