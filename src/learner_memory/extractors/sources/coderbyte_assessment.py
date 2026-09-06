@@ -25,7 +25,12 @@ from learner_memory.extractors.base import BaseExtractor, ExtractionInput
 from learner_memory.extractors.chunking import Chunk, QuestionChunker
 from learner_memory.extractors.registry import register
 from learner_memory.llm.client import LLMClient, TraceContext
-from learner_memory.schemas.coderbyte import CoderbyteAssessment, CoderbyteQuestion
+from learner_memory.schemas.coderbyte import (
+    CoderbyteAssessment,
+    CoderbyteQuestion,
+    QuestionKind,
+    RubricScore,
+)
 from learner_memory.schemas.memory_card import MemoryCardDraft, SourceType
 
 QUESTION_MARKER = "### QUESTION"
@@ -37,6 +42,7 @@ class CoderbyteAssessmentPayload(BaseModel):
     assessment_id: str | None = None
     assessment_name: str | None = None
     question_ids: list[str] = Field(default_factory=list)
+    question_kinds: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
     score: float | None = None
     max_score: float | None = None
@@ -127,6 +133,7 @@ class CoderbyteAssessmentExtractor(BaseExtractor):
             assessment_id=a.assessment_id if a else None,
             assessment_name=a.name if a else None,
             question_ids=ids,
+            question_kinds=sorted({q.normalized_kind.value for q in seen}),
             topics=sorted({t for q in seen for t in q.topics}),
             score=a.score if a else None,
             max_score=a.max_score if a else None,
@@ -160,7 +167,10 @@ def _render_question(index: int, q: CoderbyteQuestion) -> str:
 
     if q.title:
         lines.append(f"Title: {q.title}")
-    if q.kind:
+    kind = q.normalized_kind
+    if kind is not QuestionKind.UNKNOWN:
+        lines.append(f"Type: {kind.value}")
+    elif q.kind:
         lines.append(f"Type: {q.kind}")
     if q.language:
         lines.append(f"Language: {q.language}")
@@ -183,8 +193,68 @@ def _render_question(index: int, q: CoderbyteQuestion) -> str:
 
     if q.prompt:
         lines.append(f"Prompt:\n{q.prompt.strip()}")
-    lines.append(f"Learner's answer:\n{q.answer.strip() if q.answer else '(no answer submitted)'}")
+
+    lines.extend(_render_body(q))
+    return "\n".join(lines)
+
+
+def _render_body(q: CoderbyteQuestion) -> list[str]:
+    """The answer, rendered on the terms of the question that was asked.
+
+    The three shapes are not interchangeable evidence: a picked option shows
+    recognition, submitted code shows production, prose shows reasoning. Each
+    needs different surrounding context to be readable — an MCQ answer without
+    the alternatives is meaningless, and an essay without the grader's rubric is
+    just unscored text.
+    """
+    kind = q.normalized_kind
+
+    if kind is QuestionKind.MULTIPLE_CHOICE and q.options:
+        return _render_choice(q)
+
+    lines: list[str] = []
+    label = "Learner's code" if kind is QuestionKind.CODING else "Learner's answer"
+    lines.append(f"{label}:\n{q.answer.strip() if q.answer else '(no answer submitted)'}")
     if q.expected_answer:
         lines.append(f"Expected answer:\n{q.expected_answer.strip()}")
+    if q.rubric:
+        lines.append("Rubric: " + "; ".join(_rubric_line(r) for r in q.rubric))
+    if q.grader_feedback:
+        lines.append(f"Grader feedback:\n{q.grader_feedback.strip()}")
+    return lines
 
-    return "\n".join(lines)
+
+def _render_choice(q: CoderbyteQuestion) -> list[str]:
+    """Options with the learner's pick and the correct one marked inline.
+
+    Which distractor was chosen is the whole signal on a wrong MCQ — it separates
+    a plausible misconception from a random guess — so the alternatives have to be
+    in the text, not just the answer.
+    """
+    chosen = {id(o) for o in q.chosen_options()}
+    lines = ["Options offered:"]
+    for i, opt in enumerate(q.options):
+        marks = []
+        if id(opt) in chosen:
+            marks.append("chosen by learner")
+        if opt.is_correct:
+            marks.append("correct")
+        suffix = f"  <- {', '.join(marks)}" if marks else ""
+        lines.append(f"  [{opt.id or chr(65 + i)}] {(opt.text or '').strip()}{suffix}")
+
+    if not chosen:
+        # The source never said which option was picked; fall back to the raw answer.
+        lines.append(f"Learner's answer:\n{q.answer.strip() if q.answer else '(no answer submitted)'}")
+    if q.expected_answer and not any(o.is_correct for o in q.options):
+        lines.append(f"Expected answer:\n{q.expected_answer.strip()}")
+    if q.grader_feedback:
+        lines.append(f"Grader feedback:\n{q.grader_feedback.strip()}")
+    return lines
+
+
+def _rubric_line(r: RubricScore) -> str:
+    name = r.criterion or "criterion"
+    if r.score is None:
+        return f"{name} (ungraded)"
+    score = f"{r.score:g}/{r.max_score:g}" if r.max_score is not None else f"{r.score:g}"
+    return f"{name} {score}" + (f" ({r.comment.strip()})" if r.comment else "")

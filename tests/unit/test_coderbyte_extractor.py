@@ -20,7 +20,7 @@ from learner_memory.extractors.base import ExtractionInput
 from learner_memory.extractors.chunking import QuestionChunker
 from learner_memory.extractors.registry import get_extractor, load_extractors
 from learner_memory.llm.client import TraceContext
-from learner_memory.schemas.coderbyte import CoderbyteAssessment
+from learner_memory.schemas.coderbyte import CoderbyteAssessment, CoderbyteQuestion
 from learner_memory.schemas.memory_card import ExtractionResult, MemoryCardDraft, SourceType
 
 ASSESSMENT = {
@@ -284,3 +284,109 @@ async def test_payload_provenance_is_stamped_not_asked_of_the_model():
     assert payload["score"] == 72 and payload["max_score"] == 100
     # Only q1 names a language, so the group is unambiguous.
     assert payload["language"] == "python"
+
+
+# ----------------------------------------------------------- question kinds
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("coding", "coding"), ("Live Coding", "coding"), ("sql", "coding"),
+        ("mcq", "multiple_choice"), ("Multiple-Choice", "multiple_choice"),
+        ("true_false", "multiple_choice"), ("checkbox", "multiple_choice"),
+        ("essay", "free_response"), ("open ended", "free_response"),
+        ("short_answer", "free_response"), ("video", "free_response"),
+        ("something_new", "unknown"),
+    ],
+)
+def test_question_kind_normalises_source_spellings(raw, expected):
+    q = CoderbyteQuestion.model_validate({"type": raw})
+    assert q.normalized_kind.value == expected
+
+
+def test_kind_is_inferred_from_evidence_when_the_label_is_missing():
+    """A missing or unknown type must not cost us the question."""
+    assert CoderbyteQuestion.model_validate(
+        {"options": ["a", "b"]}
+    ).normalized_kind.value == "multiple_choice"
+    assert CoderbyteQuestion.model_validate(
+        {"language": "python"}
+    ).normalized_kind.value == "coding"
+
+
+def test_mcq_renders_all_options_with_choice_and_correctness_marked():
+    """Which distractor was picked is the signal; the answer alone hides it."""
+    doc = {
+        "name": "Q",
+        "questions": [{
+            "id": "m1", "type": "mcq", "prompt": "Pick one",
+            "options": [
+                {"id": "A", "text": "composite on (a)", "selected": True},
+                {"id": "B", "text": "composite on (a, b)", "is_correct": True},
+                {"id": "C", "text": "no index"},
+            ],
+            "correct": False,
+        }],
+    }
+    load_extractors()
+    text = get_extractor(SourceType.CODERBYTE_ASSESSMENT).parse(_input(json.dumps(doc).encode()))
+
+    assert "Options offered:" in text
+    assert "[A] composite on (a)  <- chosen by learner" in text
+    assert "[B] composite on (a, b)  <- correct" in text
+    assert "[C] no index" in text          # the untaken distractor is context too
+
+
+def test_mcq_options_may_be_bare_strings_with_selection_by_id():
+    doc = {"questions": [{"id": "m2", "type": "mcq",
+                          "choices": ["alpha", "beta"], "selected": ["1"]}]}
+    q = CoderbyteAssessment.from_document(doc).questions[0]
+    assert [o.text for o in q.options] == ["alpha", "beta"]
+    # No ids on bare strings, so selection by id cannot match — render falls back.
+    assert q.chosen_options() == []
+
+
+def test_mcq_selection_falls_back_to_matching_the_answer_text():
+    q = CoderbyteQuestion.model_validate(
+        {"type": "mcq", "options": ["alpha", "beta"], "answer": "beta"}
+    )
+    assert [o.text for o in q.chosen_options()] == ["beta"]
+
+
+def test_open_question_renders_rubric_and_grader_feedback():
+    """Open answers are where reasoning shows; without the rubric they are unscored text."""
+    doc = {
+        "questions": [{
+            "id": "o1", "type": "essay",
+            "prompt": "How would you scale this service?",
+            "answer": "I would add a read replica and cache hot keys.",
+            "rubric": [
+                {"criterion": "correctness", "score": 4, "max_score": 5},
+                {"name": "clarity", "points": 3, "out_of": 5, "comment": "terse"},
+            ],
+            "feedback": "Good instincts, did not address consistency.",
+        }],
+    }
+    load_extractors()
+    text = get_extractor(SourceType.CODERBYTE_ASSESSMENT).parse(_input(json.dumps(doc).encode()))
+
+    assert "Type: free_response" in text
+    assert "Rubric: correctness 4/5; clarity 3/5 (terse)" in text
+    assert "Grader feedback:\nGood instincts, did not address consistency." in text
+
+
+def test_coding_answer_is_labelled_as_code():
+    load_extractors()
+    text = get_extractor(SourceType.CODERBYTE_ASSESSMENT).parse(_input(json.dumps(ASSESSMENT).encode()))
+    assert "Learner's code:" in text          # q1/q3 are coding
+    assert "Learner's answer:" in text        # q2 is multiple choice without options
+
+
+def test_payload_records_the_question_kinds_in_the_chunk():
+    load_extractors()
+    extractor = get_extractor(SourceType.CODERBYTE_ASSESSMENT)
+    data = _input(json.dumps(ASSESSMENT).encode())
+    chunk = QuestionChunker(questions_per_chunk=5).split(extractor.parse(data))[0]
+
+    assert extractor._payload_for(chunk)["question_kinds"] == ["coding", "multiple_choice"]
