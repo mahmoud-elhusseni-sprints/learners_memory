@@ -56,7 +56,7 @@ class CoderbyteAssessmentExtractor(BaseExtractor):
     version = "coderbyte_assessment@1.0"
     prompt_version = "v1"
     payload_model = CoderbyteAssessmentPayload
-    chunker = QuestionChunker(questions_per_chunk=5)
+    chunker = QuestionChunker(questions_per_chunk=30)
 
     def __init__(self, llm: LLMClient | None = None, prompts: Any = None,
                  agent: CoderbyteAgent | None = None) -> None:

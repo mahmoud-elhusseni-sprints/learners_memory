@@ -59,7 +59,7 @@ class QuestionChunker:
     its questions — which keeps deterministic card ids stable across re-runs.
     """
 
-    def __init__(self, questions_per_chunk: int = 5, marker: str = "### QUESTION") -> None:
+    def __init__(self, questions_per_chunk: int = 30, marker: str = "### QUESTION") -> None:
         self.questions_per_chunk = questions_per_chunk
         self.marker = marker
 
