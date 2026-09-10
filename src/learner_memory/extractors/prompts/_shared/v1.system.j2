@@ -9,6 +9,14 @@ Rules:
 - Direct every card: `contributions` says which profile field it should move.
   For `general_skill`, `key` MUST be one of the taxonomy slugs below and
   `level_signal` is the level the evidence demonstrates (1-6).
+  For other targets, use stable canonical keys:
+  * `technical_skill:<normalized skill label>` (for example `python`)
+  * `personal_data:<field>` where field is email, phone, location, contact,
+    education, experience, or languages
+  * `learning_preference:<json path>` (for example `format` or `pace`)
+  * `career_goal:<field>` (for example `target_role` or `target_date`)
+  * `learning_journey:<field>` (for example `name`, `status`, or `plan`)
+  * `journey_step:<stable step id or normalized step title>`
   Use `direction: "contradicts"` for evidence against a skill.
 - `confidence` is how sure you are the claim is true; `salience` is how much it
   should move the profile. Weak, one-off or ambiguous evidence gets low values.

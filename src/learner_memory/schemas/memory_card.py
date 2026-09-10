@@ -43,8 +43,13 @@ class CardStatus(StrEnum):
 
 
 ContributionTarget = Literal[
-    "general_skill", "technical_skill", "personal_data",
-    "learning_preference", "career_goal", "journey_step",
+    "general_skill", 
+    "technical_skill", 
+    "personal_data",
+    "learning_preference", 
+    "career_goal", 
+    "learning_journey", 
+    "journey_step",
 ]
 
 

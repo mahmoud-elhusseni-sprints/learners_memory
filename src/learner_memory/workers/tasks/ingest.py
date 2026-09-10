@@ -86,7 +86,11 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
         if dimensions:
             celery_app.send_task(
                 "profile.schedule_recompute",
-                kwargs={"learner_id": str(snapshot["learner_id"]), "dimensions": dimensions},
+                kwargs={
+                    "organization_id": str(snapshot["organization_id"]),
+                    "learner_id": str(snapshot["learner_id"]),
+                    "dimensions": dimensions,
+                },
             )
         return {"cards": len(cards), "dimensions": dimensions}
 
