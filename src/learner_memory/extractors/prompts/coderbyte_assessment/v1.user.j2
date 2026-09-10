@@ -1,0 +1,27 @@
+Source: a completed Coderbyte assessment — questions, the learner's own answers,
+and the grading outcome for each.
+Taken at: {{ occurred_at }}
+{% if assessment_name %}Assessment: {{ assessment_name }}{% endif %}
+{% if role_target %}Assessed against role: {{ role_target }}{% endif %}
+
+{% if analysis %}
+A prior pass over these questions produced this per-topic analysis. Treat it as a
+lead, not as fact — every card must still stand on the source text below.
+
+--- ANALYSIS ---
+{{ analysis }}
+--- END ANALYSIS ---
+{% endif %}
+{% if guidance %}
+A reviewer rejected your previous drafts. Fix this before answering:
+
+--- REVIEW ---
+{{ guidance }}
+--- END REVIEW ---
+{% endif %}
+
+--- ASSESSMENT ---
+{{ chunk }}
+--- END ASSESSMENT ---
+
+Return JSON matching the ExtractionResult schema.

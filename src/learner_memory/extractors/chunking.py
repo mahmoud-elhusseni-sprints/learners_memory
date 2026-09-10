@@ -50,6 +50,48 @@ class TranscriptChunker:
         return chunks
 
 
+class QuestionChunker:
+    """Groups question blocks — assessments, quizzes, structured Q&A.
+
+    Splits on a marker line (``### QUESTION <id>``) and keeps whole questions
+    together: an answer separated from its prompt is not evidence of anything.
+    The anchor names the ids in the group, so it survives the source reordering
+    its questions — which keeps deterministic card ids stable across re-runs.
+    """
+
+    def __init__(self, questions_per_chunk: int = 30, marker: str = "### QUESTION") -> None:
+        self.questions_per_chunk = questions_per_chunk
+        self.marker = marker
+
+    def split(self, text: str, meta: dict | None = None) -> list[Chunk]:
+        pattern = re.compile(rf"^{re.escape(self.marker)}\s*(\S+)?\s*$", re.MULTILINE)
+        marks = list(pattern.finditer(text))
+        if not marks:
+            return WholeDocumentChunker().split(text, meta)
+
+        preamble = text[: marks[0].start()].strip()
+        questions: list[tuple[str, str]] = []
+        for i, m in enumerate(marks):
+            end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+            questions.append((m.group(1) or str(i), text[m.start():end].rstrip()))
+
+        chunks: list[Chunk] = []
+        for start in range(0, len(questions), self.questions_per_chunk):
+            window = questions[start : start + self.questions_per_chunk]
+            ids = ",".join(q_id for q_id, _ in window)
+            body = "\n\n".join(block for _, block in window)
+            # The preamble carries the overall score, which every group needs to
+            # read its own questions in context.
+            chunks.append(
+                Chunk(
+                    anchor=f"questions:{ids}",
+                    text=f"{preamble}\n\n{body}" if preamble else body,
+                    meta=meta,
+                )
+            )
+        return chunks
+
+
 class SectionChunker:
     """Splits on markdown-ish headings — CVs, reports, long documents."""
 

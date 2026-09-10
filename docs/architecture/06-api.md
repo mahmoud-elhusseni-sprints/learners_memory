@@ -38,6 +38,46 @@ POST /v1/ingest/{source_type}/complete   # confirm upload, enqueue pipeline
 GET  /v1/ingest/documents/{id}           # status, error, produced card ids
 POST /v1/ingest/documents/{id}/reprocess # force re-extraction
 ```
+#### Coderbyte assessments
+
+`POST /v1/ingest/coderbyte_assessment` takes the JSON a learn-os reader service
+pulls from Coderbyte — we never call Coderbyte ourselves. `payload` carries the
+assessment; `questions` may sit beside `assessment` or inside it.
+
+```jsonc
+{ "learner_id": "…", "occurred_at": "2026-03-01T10:00:00Z",
+  "external_id": "cb-run-001",
+  "metadata": { "assessment_name": "…", "role_target": "…" },
+  "payload": {
+    "assessment": { "id": "…", "name": "…", "score": 72, "max_score": 100,
+                    "percentile": 64, "duration_seconds": 2700 },
+    "questions": [ { "id": "q1", "type": "coding|mcq|open_ended",
+                     "title": "…", "prompt": "…", "topics": ["…"],
+                     "language": "python",              // coding
+                     "answer": "…",                     // the learner's own work
+                     "options": [{"id": "A", "text": "…", "selected": true},
+                                 {"id": "B", "text": "…", "is_correct": true}],
+                     "rubric":  [{"criterion": "clarity", "score": 3, "max_score": 5}],
+                     "feedback": "…",                   // grader, open questions
+                     "correct": true, "score": 10, "max_score": 10,
+                     "test_cases": {"passed": 8, "total": 8},
+                     "attempts": 1, "time_spent_seconds": 240 } ] } }
+```
+
+Every field is optional except a non-empty question list, and the common
+alternative spellings are accepted (`response`/`submission` for `answer`,
+`choices` for `options`, `items` for `questions`, …) — the reader service sits
+outside our release cycle. Question `type` is normalised onto `coding`,
+`multiple_choice` and `free_response`, and inferred from the evidence when the
+label is absent.
+
+The three shapes are not interchangeable evidence, and each is rendered with the
+context that makes it readable: options are listed with the learner's pick and
+the correct answer marked (which distractor was chosen is the whole signal on a
+wrong MCQ), open answers carry the grader's rubric and feedback, coding answers
+carry the submitted code and per-test results. **Do not send candidate name or
+email** — they are dropped at parse time, but should not be transmitted.
+
 Headers: `Idempotency-Key` (optional; content hash used otherwise).
 Body envelope is identical across sources — `learner_id`, `occurred_at`,
 `external_id`, `metadata`, `payload|file` — so producers integrate once.

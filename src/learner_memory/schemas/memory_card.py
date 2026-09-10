@@ -17,6 +17,7 @@ class SourceType(StrEnum):
     TASK_REVIEW = "task_review"
     CHAT = "chat"
     ASSESSMENT = "assessment"
+    CODERBYTE_ASSESSMENT = "coderbyte_assessment"
     CV = "cv"
     SELF_REPORT = "self_report"
     MENTOR_FEEDBACK = "mentor_feedback"

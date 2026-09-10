@@ -16,6 +16,7 @@ dependencies = [
   "qdrant-client>=1.11",
   "supabase>=2.7",
   "litellm>=1.55",
+  "langgraph>=0.2,<1.0",   # agentic extraction graphs (coderbyte assessment)
   "langfuse>=2.53,<3",   # v2 keeps litellm's classic "langfuse" callback; v3+ moves to OTEL
   "structlog>=24.4",
   "prometheus-fastapi-instrumentator>=7.0",
