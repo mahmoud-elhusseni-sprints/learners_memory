@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from learner_memory.core.logging import get_logger
 from learner_memory.db.models.raw import CardContribution, MemoryCardRecord, RawDocument
@@ -153,9 +153,10 @@ async def _persist_cards(cards: list[MemoryCard], extractor_version: str) -> Non
     await get_card_index().upsert(cards, vectors)
 
     async with unit_of_work() as s:
-        now = datetime.now(UTC)
         for card in cards:
             rec = await s.get(MemoryCardRecord, card.id)
             if rec:
                 rec.status = CardStatus.INDEXED.value
-                rec.vector_synced_at = now
+                # Same transaction clock as the `updated_at` onupdate, so this write does
+                # not itself make the row look out of sync to reconcile_vectors.
+                rec.vector_synced_at = func.now()

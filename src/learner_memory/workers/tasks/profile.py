@@ -1,7 +1,7 @@
 """Profile synthesis tasks.
 
 `schedule_recompute` coalesces: a meeting that yields 20 cards marks the affected
-dimensions stale once and lets the 15-minute beat (or the debounce window) drive a
+dimensions stale once and lets the daily beat (or the debounce window) drive a
 single recompute, instead of 20 competing ones.
 """
 from __future__ import annotations
