@@ -5,7 +5,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import BackgroundTasks, Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from learner_memory.core.config import Settings, get_settings
@@ -26,10 +26,30 @@ class AuthContext:
 
 async def get_auth(
     settings: Annotated[Settings, Depends(get_settings)],
+    session: Annotated[AsyncSession, Depends(get_session)],
+    background: BackgroundTasks,
     authorization: Annotated[str | None, Header()] = None,
+    x_api_key: Annotated[str | None, Header()] = None,
     x_organization_id: Annotated[str | None, Header()] = None,
 ) -> AuthContext:
-    """org_id always comes from the token — never from a request body."""
+    """org_id always comes from the credential — never from a request body.
+
+    An API key identifies a remote *service* and is checked before anything else,
+    so a key keeps working in local dev where `auth_disabled` short-circuits JWTs.
+    """
+    if x_api_key:
+        from learner_memory.core.security import touch_api_key, verify_api_key
+
+        key = await verify_api_key(x_api_key, session)
+        # Off the hot path: the usage stamp runs after the response is sent, in
+        # its own transaction, so a read never turns into a write.
+        background.add_task(touch_api_key, key.id)
+        return AuthContext(
+            organization_id=key.organization_id,
+            subject=f"apikey:{key.name}",
+            scopes=frozenset(key.scopes or ()),
+        )
+
     if settings.auth_disabled:
         if not x_organization_id:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "X-Organization-Id required")

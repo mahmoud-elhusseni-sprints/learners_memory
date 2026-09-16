@@ -1,8 +1,13 @@
 # API surface & communication
 
-FastAPI, `/v1`, async throughout. Auth: service-to-service JWT (learn-os issuer)
-carrying `organization_id`, `subject`, `scopes`. `organization_id` is **always**
-taken from the token, never the body.
+FastAPI, `/v1`, async throughout. Two credential types, both resolving to the
+same `organization_id` / `subject` / `scopes` context:
+
+- **JWT** (`Authorization: Bearer …`) — service-to-service, learn-os issuer.
+- **API key** (`X-API-Key: lm_…`) — a long-lived credential for a remote service
+  outside the learn-os token issuer. See §6.3.
+
+`organization_id` is **always** taken from the credential, never the body.
 
 ## 6.1 Endpoints
 
@@ -94,7 +99,8 @@ POST /v1/memory/cards/{card_id}/correct  # supersede with a human-authored card
 
 ### Profile (scope `profile:read` / `profile:write`)
 ```
-GET  /v1/learners/{id}/profile           # ?include=skills,personal,career,journey
+GET  /v1/learners/{id}/profile           # implemented; returns the whole snapshot
+                                         #  (?include= filtering is not built yet)
 GET  /v1/learners/{id}/profile/skills    # 34 general subskills + technical
 GET  /v1/learners/{id}/profile/skills/{slug}/evidence   # → cards → documents
 PATCH/v1/learners/{id}/profile/personal  # human-authored, pins source_of_truth
@@ -152,7 +158,75 @@ GET  /healthz  /readyz  /metrics
 Serving this is a single Postgres read of `learner_profile.snapshot` — Qdrant is
 never on the read path for profile fetches, only for search and synthesis.
 
-## 6.3 Communication with the rest of learn-os
+What `GET /v1/learners/{id}/profile` returns today is the `learner_profile` row
+as-is:
+
+```jsonc
+{ "learner_id": "…", "organization_id": "…", "profile_version": 4,
+  "computed_at": "2026-09-16T09:12:44Z",
+  "stale_dimensions": ["technical_skills"],
+  "snapshot": { /* the shape above, once the synthesizer writes it */ } }
+```
+
+`stale_dimensions` is exposed rather than hidden so a caller can tell a snapshot
+is mid-recompute and decide whether to cache it. **Until the profile synthesizer
+lands** (`profile.recompute_profile` still raises `NotImplementedError`), every
+snapshot is the empty stub written at registration: the endpoint answers `200`
+with `"snapshot": {}` and `"profile_version": 0`, not an error. Consumers should
+be told that, so they do not read an empty snapshot as a bug.
+
+## 6.3 API keys for remote services
+
+A remote service that cannot get a learn-os JWT authenticates with a long-lived
+key instead. The key *is* the tenant: it carries the `organization_id` it was
+issued for, so a service physically cannot read another org's data — the same
+repository filter that scopes JWT traffic scopes key traffic too.
+
+```
+X-API-Key: lm_<prefix>_<secret>
+```
+
+The `prefix` is an indexed lookup handle, so verification is one indexed row
+fetch plus a constant-time hash compare — never a scan. Only the SHA-256 of the
+full key is stored; plain SHA-256 is right here because the secret carries 256
+bits of entropy, so there is nothing to brute-force and verification stays cheap
+enough for the hot read path. The plaintext exists exactly once, at issue time.
+
+Keys are checked *before* the `AUTH_DISABLED` local-dev branch, so a revoked key
+is rejected even on a dev box, and keys can be exercised locally for real.
+
+Issued, listed and revoked from the CLI — they are handed over out of band, so
+there is no admin endpoint to secure:
+
+```bash
+make key org=<uuid> name=coderbyte scopes=profile:read   # prints the key once
+make keys [org=<uuid>]
+make revoke-key prefix=<prefix>
+```
+
+Those wrap `docker compose run --rm api python scripts/issue_api_key.py …`; run
+the script directly (with `DATABASE_URL` and `PYTHONPATH=src` set) outside the
+compose stack. `--expires-days N` is available on the script form.
+
+Revocation takes effect on the next request: the key row is read per request and
+is not cached. `last_used_at` is stamped after the response is sent, in its own
+transaction, so a read never becomes a write on the critical path — and a failed
+stamp is a log line, never a 500.
+
+Failure modes, all deliberately uninformative:
+
+| Case | Status |
+|---|---|
+| missing, malformed, unknown, forged, or revoked key | `401 invalid api key` |
+| expired key | `401 api key expired` |
+| key lacks the scope | `403 missing scope '…'` |
+| learner unknown **or in another org** | `404` |
+
+The last row is the point: a cross-tenant read is indistinguishable from a
+missing learner, so a key can never be used to probe which learners exist
+elsewhere.
+
+## 6.4 Communication with the rest of learn-os
 
 **Inbound**, two supported modes:
 1. *Push* — producers call the ingest API (preferred; simplest to reason about).
