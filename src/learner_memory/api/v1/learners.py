@@ -7,7 +7,11 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from learner_memory.api.deps import AuthDep, LearnerRepoDep
 from learner_memory.core.logging import get_logger
-from learner_memory.schemas.learner import LearnerRegisterRequest, LearnerResponse
+from learner_memory.schemas.learner import (
+    LearnerProfileResponse,
+    LearnerRegisterRequest,
+    LearnerResponse,
+)
 
 router = APIRouter(prefix="/learners", tags=["learners"])
 log = get_logger(__name__)
@@ -48,3 +52,18 @@ async def get_learner(learner_id: uuid.UUID, repo: LearnerRepoDep, auth: AuthDep
     if learner is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "learner not found")
     return LearnerResponse.model_validate(learner)
+
+
+@router.get("/{learner_id}/profile", response_model=LearnerProfileResponse)
+async def get_learner_profile(learner_id: uuid.UUID, repo: LearnerRepoDep, auth: AuthDep):
+    """Read model for remote services holding a `profile:read` API key.
+
+    404 covers both 'no such learner' and 'learner in another org' — the repo's
+    org filter makes them the same answer, so existence never leaks across tenants.
+    """
+    auth.require("profile:read")
+    profile = await repo.get_profile(learner_id)
+    if profile is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "profile not found")
+    log.info("profile.read", learner_id=str(learner_id), subject=auth.subject)
+    return LearnerProfileResponse.model_validate(profile)

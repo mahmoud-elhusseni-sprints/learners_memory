@@ -13,6 +13,7 @@ x-app: &app
   volumes:
     - ./src:/app/src
     - ./docs:/app/docs
+    - ./scripts:/app/scripts   # so a new script runs without rebuilding the image
   depends_on:
     postgres: {condition: service_healthy}
     redis: {condition: service_started}

@@ -28,3 +28,20 @@ class LearnerResponse(BaseModel):
     created: bool = Field(False, description="False when the learner already existed")
 
     model_config = {"from_attributes": True}
+
+
+class LearnerProfileResponse(BaseModel):
+    """The `learner_profile` read model, verbatim.
+
+    `stale_dimensions` is exposed rather than hidden: it tells a remote service
+    the snapshot is mid-recompute, so it can decide whether to cache the result.
+    """
+
+    learner_id: uuid.UUID
+    organization_id: uuid.UUID
+    profile_version: int
+    computed_at: datetime | None
+    stale_dimensions: list[str] = Field(default_factory=list)
+    snapshot: dict = Field(default_factory=dict)
+
+    model_config = {"from_attributes": True}

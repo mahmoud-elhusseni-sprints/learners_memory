@@ -1,4 +1,4 @@
-.PHONY: up down logs build migrate revision seed bootstrap test lint fmt shell
+.PHONY: up down logs build migrate revision seed bootstrap key keys revoke-key test lint fmt shell
 
 up:            ## start the full local stack
 	docker compose up -d --build
@@ -17,6 +17,14 @@ seed:
 	docker compose run --rm api python scripts/seed_taxonomy.py
 bootstrap:
 	docker compose run --rm api python scripts/bootstrap.py
+
+key:           ## issue an api key: make key org=<uuid> name=<service> [scopes="profile:read"]
+	docker compose run --rm api python scripts/issue_api_key.py issue \
+		--org "$(org)" --name "$(name)" --scopes $(or $(scopes),profile:read)
+keys:          ## list api keys
+	docker compose run --rm api python scripts/issue_api_key.py list $(if $(org),--org $(org),)
+revoke-key:    ## revoke an api key: make revoke-key prefix=<prefix>
+	docker compose run --rm api python scripts/issue_api_key.py revoke --prefix "$(prefix)"
 
 init: up migrate seed bootstrap   ## first-run setup
 

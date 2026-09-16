@@ -75,3 +75,15 @@ class LearnerRepository(Repository[Learner]):
             self._scoped().where(Learner.status == "active").limit(limit).offset(offset)
         )
         return list(res.scalars())
+
+    async def get_profile(self, learner_id: uuid.UUID) -> LearnerProfile | None:
+        """`learner_profile` is keyed on learner_id, not `id`, so the generic
+        Repository.get does not apply. The org filter is what makes a
+        cross-tenant read indistinguishable from a missing learner."""
+        res = await self.session.execute(
+            select(LearnerProfile).where(
+                LearnerProfile.learner_id == learner_id,
+                LearnerProfile.organization_id == self.organization_id,
+            )
+        )
+        return res.scalar_one_or_none()
