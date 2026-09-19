@@ -22,8 +22,8 @@ services:
   # ---------------- application ----------------
   api:
     <<: *app
-    command: uvicorn learner_memory.main:app --host 0.0.0.0 --port 8000 --reload
-    ports: ["8000:8000"]
+    command: uvicorn learner_memory.main:app --host 0.0.0.0 --port 8000 --reload --root-path /learner-memory
+    ports: ["127.0.0.1:8013:8000"]
 
   worker-extract:
     <<: *app
@@ -48,7 +48,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: learner_memory
-    ports: ["55432:5432"] 
+    ports: ["127.0.0.1:55432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
@@ -58,21 +58,25 @@ services:
   # Celery broker + result backend. Not optional: the workers and beat need it.
   redis:
     image: redis:7-alpine
-    ports: ["6380:6379"]   # 6379 is taken by the langfuse stack
+    ports: ["127.0.0.1:6380:6379"]
     volumes: ["redisdata:/data"]
 
   # ---------------- observability ----------------
   prometheus:
     image: prom/prometheus:v2.55.0
+    # The repo tree is mode 0770 (owner + sprints_rnd), and the image's default
+    # `nobody` user cannot read the bind-mounted config. Running as root here is
+    # narrower than opening up the whole home directory.
+    user: root
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
-    ports: ["9092:9090"]   # 9090 is taken by langfuse-minio
+    ports: ["127.0.0.1:9092:9090"]
 
   celery-exporter:
     image: danihodovic/celery-exporter:0.11.0
     command: --broker-url=redis://redis:6379/0
-    ports: ["9808:9808"]
+    ports: ["127.0.0.1:9808:9808"]
     depends_on: [redis]
 
   grafana:
@@ -85,7 +89,7 @@ services:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafanadata:/var/lib/grafana
-    ports: ["3002:3000"]   # 3000 is taken by the shared langfuse stack
+    ports: ["127.0.0.1:3003:3000"]
     depends_on: [prometheus]
 
 volumes:

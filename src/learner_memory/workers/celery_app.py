@@ -42,9 +42,10 @@ celery_app.conf.update(
 # data to justify their cost — they exist as on-demand admin tasks instead.
 celery_app.conf.beat_schedule = {
     "refresh-stale-profiles": {
-        # Picks up debounced recomputes and anything a crashed worker dropped.
+        # Daily (00:00 UTC) sweep: picks up debounced recomputes and anything a
+        # crashed worker dropped.
         "task": "profile.refresh_stale_profiles",
-        "schedule": crontab(minute="*/15"),
+        "schedule": crontab(minute=0, hour=0),
     },
     "retry-failed-documents": {
         # Bounded retry of documents that failed extraction (transient LLM/storage).

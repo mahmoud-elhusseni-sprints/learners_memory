@@ -87,7 +87,7 @@ are admin endpoints, run when there is a reason.
 
 | task | cadence | why it must be periodic |
 | --- | --- | --- |
-| `profile.refresh_stale_profiles` | every 15 min | drains `stale_dimensions` — the debounce that turns a 20-card meeting into one recompute, and the safety net for recomputes a crashed worker dropped |
+| `profile.refresh_stale_profiles` | daily, 00:00 UTC | drains `stale_dimensions` — the debounce that turns a 20-card meeting into one recompute, and the safety net for recomputes a crashed worker dropped |
 | `maintenance.retry_failed_documents` | every 30 min | transient LLM/storage failures are the common case; without this they need a human |
 | `maintenance.reconcile_vectors` | hourly | the only guard on our single dual write (Postgres → Qdrant). A crash between the two silently removes evidence from every future recompute |
 

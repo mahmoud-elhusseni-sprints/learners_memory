@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from learner_memory.core.logging import get_logger
 from learner_memory.db.models.raw import MemoryCardRecord, RawDocument
@@ -50,7 +50,7 @@ async def _reconcile(batch_size: int) -> dict:
     future profile recompute.
     """
     from learner_memory.llm.client import TraceContext, get_llm_client
-    from learner_memory.schemas.memory_card import MemoryCard
+    from learner_memory.schemas.memory_card import CardStatus
     from learner_memory.vector.qdrant import get_card_index
 
     async with unit_of_work() as s:
@@ -75,14 +75,21 @@ async def _reconcile(batch_size: int) -> dict:
     vectors = await llm.embed(
         [c.content for c in pending], trace=TraceContext(name="embed.reconcile", tags=["reconcile"])
     )
+    # Mirror _persist_cards: a card is only visible to retrieval and profile
+    # synthesis once it is indexed, so a repaired card must be promoted too.
+    for card in pending:
+        if card.status == CardStatus.EXTRACTED:
+            card.status = CardStatus.INDEXED
     await get_card_index().upsert(pending, vectors)
 
     async with unit_of_work() as s:
-        now = datetime.now(UTC)
         for card in pending:
             rec = await s.get(MemoryCardRecord, card.id)
             if rec:
-                rec.vector_synced_at = now
+                rec.status = str(card.status)
+                # Same transaction clock as the `updated_at` onupdate, so this write does
+                # not itself make the row look out of sync to reconcile_vectors.
+                rec.vector_synced_at = func.now()
     log.info("maintenance.reconciled", count=len(pending))
     return {"resynced": len(pending)}
 

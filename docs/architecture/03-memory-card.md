@@ -54,7 +54,7 @@ class MemoryCard(BaseModel):
 class Contribution(BaseModel):
     target: Literal["general_skill", "technical_skill",
                     "personal_data", "learning_preference",
-                    "career_goal", "journey_step"]
+                    "career_goal", "learning_journey", "journey_step"]
     key: str                        # "critical_thinking" | "python" | "email" ...
     level_signal: int | None        # 1..6 on the taxonomy scale, if assessable
     weight: float                   # 0..1 contribution strength
@@ -66,9 +66,19 @@ challenging an assumption in a design review carries
 `[{general_skill, critical_thinking, L4, 0.8}, {general_skill, influence, L3, 0.4}]`,
 so the synthesizer only re-runs the two dimensions that actually changed.
 
+Profile synthesis is incremental. Each flattened `card_contribution` stores the
+`memory_card.updated_at` version last supplied to the profile agent. A contribution
+is fresh when that marker is missing or older than the card, so the same card can be
+consumed independently by each `target:key` without being synthesized twice.
+
 `key` for `general_skill` is validated against `core.taxonomy` (34 frozen slugs).
 Anything the extractor invents that isn't in the taxonomy is dropped into
 `tags` instead of silently becoming a fake skill.
+
+Other targets use stable keys: a normalized technical-skill label, a personal
+data field, a learning-preference JSON path, a career/journey field, or a stable
+journey-step id/slug. This makes stale-dimension scheduling and patch validation
+deterministic across extractors.
 
 ## 3.2 Per-source payloads
 
@@ -95,5 +105,5 @@ synthesizer — they only ever see the envelope. See
 Cards are **append-only**. A correction (human or re-extraction) writes a new
 card and sets `superseded_by` on the old one; the old card stays retrievable for
 audit but is excluded from synthesis by a Qdrant filter on `status`. Retraction
-(e.g. GDPR, or a mis-attributed speaker) tombstones the card and triggers a
-recompute of every dimension it contributed to.
+(e.g. GDPR, or a mis-attributed speaker) tombstones the card and must trigger the
+separate full-rebuild path; the incremental agent only applies fresh active evidence.

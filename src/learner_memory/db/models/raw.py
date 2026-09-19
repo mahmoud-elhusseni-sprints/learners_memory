@@ -5,10 +5,19 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    ARRAY, BigInteger, DateTime, Float, ForeignKey, Index, Integer,
-    String, Text, UniqueConstraint,
+    ARRAY,
+    BigInteger,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from learner_memory.db.base import Base, OrgScoped, Timestamps, UUIDPk
@@ -88,6 +97,9 @@ class CardContribution(Base):
     level_signal: Mapped[int | None] = mapped_column(Integer)
     weight: Mapped[float] = mapped_column(Float, default=0.5)
     direction: Mapped[str] = mapped_column(String(16), default="supports")
+    profile_consumed_card_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
     __table_args__ = (Index("ix_card_contribution_target_key", "target", "key"),)
 
