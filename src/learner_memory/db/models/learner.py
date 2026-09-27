@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
-    ARRAY, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric,
+    ARRAY, BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric,
     SmallInteger, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
@@ -16,17 +16,25 @@ from learner_memory.db.base import Base, OrgScoped, Timestamps, UUIDPk
 
 class Learner(Base, OrgScoped, Timestamps):
     """The learner id is *supplied by the caller* at registration and used verbatim
-    as the primary key, so ids stay identical across every learn-os service."""
+    as the primary key, so ids stay identical across every learn-os service.
+
+    `external_id` is the learner's LMS user id. LMS webhooks only carry that id,
+    so it is how an LMS event finds its learner; unique per organization."""
 
     __tablename__ = "learner"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    external_id: Mapped[int | None] = mapped_column(BigInteger)
     display_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="active")
     program_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))
     cohort_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "external_id", name="uq_learner_org_external_id"),
+    )
 
 
 class LearnerPersonalData(Base, Timestamps):

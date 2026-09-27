@@ -5,12 +5,23 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+# Largest value a Postgres BIGINT holds; rejects oversized ids at the boundary
+# instead of letting them surface as a database error.
+BIGINT_MAX = 2**63 - 1
+
 
 class LearnerRegisterRequest(BaseModel):
     """The caller supplies the id. We store it as-is so learner ids are identical
     across every learn-os service — no local id, no mapping table, no drift."""
 
     id: uuid.UUID = Field(description="Learner id issued by the upstream learn-os service")
+    external_id: int | None = Field(
+        default=None,
+        gt=0,
+        le=BIGINT_MAX,
+        description="The learner's LMS user id. Required for LMS webhooks to reach this "
+                    "learner. Omitting it on re-registration keeps the stored value.",
+    )
     display_name: str | None = None
     program_id: uuid.UUID | None = None
     cohort_id: uuid.UUID | None = None
@@ -20,6 +31,7 @@ class LearnerRegisterRequest(BaseModel):
 class LearnerResponse(BaseModel):
     id: uuid.UUID
     organization_id: uuid.UUID
+    external_id: int | None = None
     display_name: str | None
     status: str
     program_id: uuid.UUID | None

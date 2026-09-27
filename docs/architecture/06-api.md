@@ -19,6 +19,7 @@ GET  /v1/learners/{learner_id}
 ```jsonc
 // POST /v1/learners
 { "id": "0f7c...-uuid-issued-by-learn-os",   // stored verbatim as the PK
+  "external_id": 90232436,                    // optional: the learner's LMS user id
   "display_name": "…", "program_id": "…", "cohort_id": "…", "metadata": {} }
 ```
 The learner id is **never generated here**. The upstream learn-os service issues
@@ -29,6 +30,11 @@ idempotent: re-posting the same id refreshes the mutable fields and returns
 Registration also creates the empty personal-data and profile rows, so reads
 never have to special-case a learner who has been registered but not yet
 processed.
+
+`external_id` is the learner's LMS user id — LMS webhooks carry only that id,
+so a learner registered without it cannot receive LMS updates. It is unique per
+organization: claiming an id already held by a different learner is a `409`.
+Re-registering without the field keeps the stored value; it is never cleared.
 
 Ingest identifies the learner by that same `learner_id` — it is the only
 learner key in the system, so producers must carry the learn-os uuid. Evidence
