@@ -48,6 +48,7 @@ class LearnerPersonalData(Base, Timestamps):
     )
     email: Mapped[str | None] = mapped_column(String(320))
     phone: Mapped[str | None] = mapped_column(String(64))
+    phone_country_code: Mapped[str | None] = mapped_column(String(8))
     location: Mapped[dict] = mapped_column(JSONB, default=dict)
     contact: Mapped[dict] = mapped_column(JSONB, default=dict)
     education: Mapped[list] = mapped_column(JSONB, default=list)
@@ -55,6 +56,19 @@ class LearnerPersonalData(Base, Timestamps):
     languages: Mapped[list] = mapped_column(JSONB, default=list)
     learning_preferences: Mapped[dict] = mapped_column(JSONB, default=dict)
     source_of_truth: Mapped[dict] = mapped_column(JSONB, default=dict)
+    bio: Mapped[str | None] = mapped_column(Text)
+    avatar_url: Mapped[str | None] = mapped_column(Text)
+    timezone: Mapped[str | None] = mapped_column(String(64))           # IANA name
+    preferred_language: Mapped[str | None] = mapped_column(String(16))
+    job_preference: Mapped[str | None] = mapped_column(String(32))
+    github_url: Mapped[str | None] = mapped_column(Text)
+    linkedin_url: Mapped[str | None] = mapped_column(Text)
+    cv_url: Mapped[str | None] = mapped_column(Text)
+    github_id: Mapped[str | None] = mapped_column(String(255))
+    linkedin_id: Mapped[str | None] = mapped_column(String(255))
+    # The LMS `last_updated_at` of the profile last applied here; an LMS response
+    # older than this is stale and must not overwrite newer data.
+    external_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SkillCatalog(Base, UUIDPk, Timestamps):

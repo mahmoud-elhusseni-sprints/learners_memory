@@ -69,7 +69,13 @@ learner(                                -- id is SUPPLIED BY THE CALLER, stored 
 learner_personal_data(                  -- PII island, separately encrypted/auditable
   learner_id uuid pk, email citext, phone text, location jsonb,
   contact jsonb, education jsonb, experience jsonb,
-  languages jsonb, demographics jsonb, source_of_truth jsonb);
+  languages jsonb, demographics jsonb, source_of_truth jsonb,
+  -- synced from the LMS "User updated" webhook
+  phone_country_code text, bio text, avatar_url text,
+  timezone text,                        -- IANA name
+  preferred_language text, job_preference text,
+  github_url text, linkedin_url text, cv_url text, github_id text, linkedin_id text,
+  external_updated_at timestamptz);     -- LMS last_updated_at of the applied profile
 
 learning_preference(learner_id uuid pk, preferences jsonb, updated_by text);
 
