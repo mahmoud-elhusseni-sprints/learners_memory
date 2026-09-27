@@ -56,7 +56,7 @@ class BaseExtractor(ABC):
     version: ClassVar[str]
     prompt_version: ClassVar[str] = "v1"
     payload_model: ClassVar[type[BaseModel] | None] = None
-    chunker: ClassVar[Chunker] = WholeDocumentChunker()
+    chunker: ClassVar[Chunker] = WholeDocumentChunker() # ME: Default chunker for single-learner sources, which are usually short enough to fit in one LLM call.
     # A multi-learner source (e.g. a meeting) attributes each card to one of several
     # participants via `subject_label`; a single-learner source stamps `learner_id`.
     multi_learner: ClassVar[bool] = False

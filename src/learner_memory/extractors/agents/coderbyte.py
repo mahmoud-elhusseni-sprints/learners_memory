@@ -1,71 +1,20 @@
-"""LangGraph agent: Coderbyte assessment -> memory card drafts.
+"""Coderbyte assessment agent.
 
-A single LLM call is a poor fit for an assessment. The interesting signal is not
-in any one answer but in the *pattern* across them — which topics held up, where
-the learner slowed down, whether a wrong answer was a near miss or a blank. So
-this runs as a small graph with a self-correction loop:
-
-    analyze ──> draft ──> critique ──┬──(revise, bounded)──> draft
-                                     └──(accept)──> finalize
-
-  analyze   one pass over the questions, producing per-topic signals rather than
-            per-question trivia. Keeps the drafting step from drowning in text.
-  draft     turns those signals into MemoryCardDraft objects.
-  critique  an adversarial read: is each card grounded in the source, or inferred?
-  finalize  applies the critique, then enforces grounding *deterministically* —
-            an `evidence_quote` that is not actually in the source is dropped, no
-            matter what the critic said about it.
-
-The graph owns judgement only. Identity, provenance, taxonomy filtering and the
-deterministic card id all stay in BaseExtractor._stamp, so an agent can never
-spoof them.
-
-LLM access goes through LLMClient (the LiteLLM proxy) rather than a LangChain
-chat model, so every node lands in the same Langfuse trace as the rest of the
-pipeline.
+The interesting signal in an assessment is not any one answer but the *pattern*
+across them — which topics held up, where the learner slowed down, whether a wrong
+answer was a near miss or a blank. The shared extraction graph (see agents.graph)
+handles that pattern; this module supplies only the assessment-shaped analysis and
+its prompts live under prompts/coderbyte_assessment/.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Any, ClassVar, Literal
 
-from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-from learner_memory.core.logging import get_logger
-from learner_memory.core.taxonomy import Taxonomy
-from learner_memory.extractors.agents._common import (
-    Critique,
-    public_context,
-    sub_trace,
-)
-from learner_memory.extractors.agents._common import (
-    last as _last,
-)
-from learner_memory.extractors.agents._common import (
-    quote_is_grounded as _quote_is_grounded,
-)
-from learner_memory.extractors.prompt_loader import PromptLibrary
-from learner_memory.llm.client import LLMClient, TraceContext
-from learner_memory.schemas.memory_card import ExtractionResult, MemoryCardDraft
-
-log = get_logger(__name__)
-
-MAX_REVISIONS = 1
-SOURCE_TYPE = "coderbyte_assessment"
-
-# Prompts render under StrictUndefined, so every optional variable a template can
-# reference needs a value. Defaulting here (rather than guarding in each template)
-# keeps StrictUndefined useful for catching genuine typos, while a caller that
-# omits an optional key gets an empty section instead of a failed extraction.
-PROMPT_DEFAULTS: dict[str, Any] = {
-    "assessment_name": None,
-    "role_target": None,
-    "analysis": "",
-    "guidance": "",
-}
-
-
-# ---------------------------------------------------------------- LLM schemas
+# Re-exported for callers/tests that import the critique schema from this module.
+from learner_memory.extractors.agents._common import Critique  # noqa: F401
+from learner_memory.extractors.agents.graph import GraphExtractionAgent
 
 
 class TopicSignal(BaseModel):
@@ -81,186 +30,14 @@ class AssessmentAnalysis(BaseModel):
     overall: str = Field("", description="One paragraph on the shape of the performance")
 
 
-# CardVerdict and Critique are shared with the transcript agent; see agents._common.
-
-
-# ---------------------------------------------------------------- graph state
-
-
-class AgentState(TypedDict, total=False):
-    # inputs (constant for the run)
-    chunk: str
-    occurred_at: str
-    context: dict[str, Any]
-    # working values
-    analysis: Annotated[AssessmentAnalysis | None, _last]
-    drafts: Annotated[list[MemoryCardDraft], _last]
-    critique: Annotated[Critique | None, _last]
-    guidance: Annotated[str, _last]
-    revisions: Annotated[int, _last]
-
-
-class CoderbyteAgent:
-    """Compiled once per extractor instance; `run` is safe to call concurrently."""
-
-    def __init__(
-        self,
-        llm: LLMClient,
-        prompts: PromptLibrary | None = None,
-        *,
-        max_revisions: int = MAX_REVISIONS,
-    ) -> None:
-        self._llm = llm
-        self._prompts = prompts or PromptLibrary()
-        self._max_revisions = max_revisions
-        self._graph = self._build().compile()
-
-    # ------------------------------------------------------------ public API
-
-    async def run(
-        self,
-        *,
-        chunk: str,
-        occurred_at: str,
-        context: dict[str, Any],
-        trace: TraceContext,
-    ) -> list[MemoryCardDraft]:
-        state: AgentState = {
-            "chunk": chunk,
-            "occurred_at": occurred_at,
-            "context": {**context, "_trace": trace},
-            "drafts": [],
-            "guidance": "",
-            "revisions": 0,
-        }
-        final = await self._graph.ainvoke(state)
-        return final.get("drafts", [])
-
-    # ---------------------------------------------------------------- graph
-
-    def _build(self) -> StateGraph:
-        g = StateGraph(AgentState)
-        g.add_node("analyze", self._analyze)
-        g.add_node("draft", self._draft)
-        g.add_node("critique", self._critique)
-        g.add_node("finalize", self._finalize)
-
-        g.set_entry_point("analyze")
-        g.add_edge("analyze", "draft")
-        g.add_edge("draft", "critique")
-        g.add_conditional_edges(
-            "critique", self._route, {"revise": "draft", "accept": "finalize"}
-        )
-        g.add_edge("finalize", END)
-        return g
-
-    # ---------------------------------------------------------------- nodes
-
-    async def _analyze(self, state: AgentState) -> dict[str, Any]:
-        rendered = self._prompts.render(
-            source_type=SOURCE_TYPE,
-            version="v1.analyze",
-            context={
-                **_public(state["context"]),
-                "chunk": state["chunk"],
-                "occurred_at": state["occurred_at"],
-            },
-        )
-        analysis = await self._llm.structured(
-            [{"role": "system", "content": rendered.system},
-             {"role": "user", "content": rendered.user}],
-            schema=AssessmentAnalysis,
-            trace=sub_trace(state["context"]["_trace"], "analyze"),
-        )
-        log.info("coderbyte.analyzed", signals=len(analysis.signals))
-        return {"analysis": analysis}
-
-    async def _draft(self, state: AgentState) -> dict[str, Any]:
-        analysis = state.get("analysis")
-        # A critique already in state means the router sent us back: this pass is a
-        # revision, and the critic's guidance is the brief for it.
-        previous = state.get("critique")
-        revisions = state.get("revisions", 0) + (1 if previous else 0)
-        guidance = previous.guidance if previous else ""
-
-        rendered = self._prompts.render(
-            source_type=SOURCE_TYPE,
-            version="v1",
-            context={
-                **_public(state["context"]),
-                "chunk": state["chunk"],
-                "occurred_at": state["occurred_at"],
-                "taxonomy": Taxonomy.prompt_block(),
-                "analysis": analysis.model_dump_json(indent=2) if analysis else "",
-                "guidance": guidance,
-            },
-        )
-        result = await self._llm.structured(
-            [{"role": "system", "content": rendered.system},
-             {"role": "user", "content": rendered.user}],
-            schema=ExtractionResult,
-            trace=sub_trace(state["context"]["_trace"], "draft"),
-        )
-        log.info("coderbyte.drafted", cards=len(result.cards), revision=revisions)
-        return {"drafts": result.cards, "revisions": revisions, "guidance": guidance}
-
-    async def _critique(self, state: AgentState) -> dict[str, Any]:
-        drafts = state.get("drafts", [])
-        if not drafts:
-            # Nothing to argue about; an empty extraction is a valid answer.
-            return {"critique": Critique()}
-
-        rendered = self._prompts.render(
-            source_type=SOURCE_TYPE,
-            version="v1.critique",
-            context={
-                **_public(state["context"]),
-                "chunk": state["chunk"],
-                "occurred_at": state["occurred_at"],
-                "cards": "\n".join(
-                    f"[{i}] {c.title}\n"
-                    f"    content: {c.content}\n"
-                    f"    quote: {c.evidence_quote or '(none)'}\n"
-                    f"    contributions: {[f'{x.target}:{x.key}@L{x.level_signal}' for x in c.contributions]}"
-                    for i, c in enumerate(drafts)
-                ),
-            },
-        )
-        critique = await self._llm.structured(
-            [{"role": "system", "content": rendered.system},
-             {"role": "user", "content": rendered.user}],
-            schema=Critique,
-            trace=sub_trace(state["context"]["_trace"], "critique"),
-        )
-        rejected = [v.index for v in critique.verdicts if not v.keep]
-        log.info("coderbyte.critiqued", rejected=len(rejected))
-        return {"critique": critique}
-
-    def _route(self, state: AgentState) -> str:
-        critique = state.get("critique")
-        if critique is None or not critique.verdicts:
-            return "accept"
-        rejected = [v for v in critique.verdicts if not v.keep]
-        if rejected and state.get("revisions", 0) < self._max_revisions:
-            return "revise"
-        return "accept"
-
-    async def _finalize(self, state: AgentState) -> dict[str, Any]:
-        drafts = state.get("drafts", [])
-        critique = state.get("critique")
-
-        if critique and critique.verdicts:
-            dropped = {v.index for v in critique.verdicts if not v.keep}
-            drafts = [c for i, c in enumerate(drafts) if i not in dropped]
-
-        kept = [c for c in drafts if _quote_is_grounded(c, state["chunk"])]
-        if len(kept) != len(drafts):
-            log.info("coderbyte.ungrounded_dropped", count=len(drafts) - len(kept))
-        return {"drafts": kept}
-
-
-# ---------------------------------------------------------------- helpers
-
-
-def _public(context: dict[str, Any]) -> dict[str, Any]:
-    return public_context(context, PROMPT_DEFAULTS)
+class CoderbyteAgent(GraphExtractionAgent):
+    source_type = "coderbyte_assessment"
+    analysis_schema = AssessmentAnalysis
+    # Prompts render under StrictUndefined, so every optional variable a template can
+    # reference needs a value — an omitted key becomes an empty section, not a crash.
+    prompt_defaults: ClassVar[dict[str, Any]] = {
+        "assessment_name": None,
+        "role_target": None,
+        "analysis": "",
+        "guidance": "",
+    }

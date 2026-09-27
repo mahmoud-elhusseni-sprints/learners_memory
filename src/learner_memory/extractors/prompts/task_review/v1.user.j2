@@ -1,13 +1,26 @@
-Source: a reviewer's assessment of a task the learner submitted.
-Task: {{ task_title or "unknown" }} · iteration {{ iteration or 1 }} · verdict {{ verdict or "n/a" }}
-Occurred at: {{ occurred_at }}
+Source: a learner's task submission with the grader's written report.
+Reviewed at: {{ occurred_at }}
+{% if task_headline %}Task: {{ task_headline }}{% endif %}
+{% if iteration %}Iteration: {{ iteration }}{% endif %}
 
-Weigh the reviewer's concrete observations over their adjectives. Rework requested
-on the same issue across iterations is evidence about follow-through and attention
-to detail, not only about the technical skill.
+{% if analysis %}
+A prior pass produced this per-dimension analysis. Treat it as a lead, not as
+fact — every card must still stand on the source below.
+
+--- ANALYSIS ---
+{{ analysis }}
+--- END ANALYSIS ---
+{% endif %}
+{% if guidance %}
+A reviewer rejected your previous drafts. Fix this before answering:
 
 --- REVIEW ---
-{{ chunk }}
+{{ guidance }}
 --- END REVIEW ---
+{% endif %}
+
+--- TASK, SUBMISSION AND REVIEW ---
+{{ chunk }}
+--- END ---
 
 Return JSON matching the ExtractionResult schema.

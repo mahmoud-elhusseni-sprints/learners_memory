@@ -27,6 +27,7 @@ class WholeDocumentChunker:
     """For short, self-contained artifacts (task review, assessment result)."""
 
     def split(self, text: str, meta: dict | None = None) -> list[Chunk]:
+        # ME: Default chunker for single-learner sources, which are usually short enough to fit in one LLM call.
         return [Chunk(anchor="doc:0", text=text, meta=meta)]
 
 
