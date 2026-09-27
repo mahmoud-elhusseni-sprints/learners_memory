@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
 
-from learner_memory.api.v1 import ingest, learners
+from learner_memory.api.v1 import ingest, learners, webhooks
 from learner_memory.core.config import get_settings
 from learner_memory.core.logging import configure_logging, get_logger
 from learner_memory.extractors.registry import load_extractors, supported_sources
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Learner Memory & Profile", version="0.1.0", lifespan=lifespan)
     app.include_router(learners.router, prefix="/v1")
     app.include_router(ingest.router, prefix="/v1")
+    app.include_router(webhooks.router, prefix="/v1")
 
     @app.get("/healthz", tags=["ops"])
     async def healthz():

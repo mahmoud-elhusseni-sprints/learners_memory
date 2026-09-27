@@ -98,6 +98,37 @@ class LearnerRepository(Repository[Learner]):
             await self.session.flush()
         return learner, created
 
+    async def get_by_external_id(self, external_id: int) -> Learner | None:
+        """The learner holding this LMS user id in this org, if registered."""
+        res = await self.session.execute(self._scoped().where(Learner.external_id == external_id))
+        return res.scalar_one_or_none()
+
+    async def lock_personal_data(self, learner_id: uuid.UUID) -> LearnerPersonalData | None:
+        """SELECT ... FOR UPDATE, held until the caller's transaction ends.
+
+        The row has no organization column: callers pass an id they obtained
+        through an org-scoped lookup.
+        """
+        res = await self.session.execute(
+            select(LearnerPersonalData)
+            .where(LearnerPersonalData.learner_id == learner_id)
+            .with_for_update()
+        )
+        return res.scalar_one_or_none()
+
+    async def lock_profile(self, learner_id: uuid.UUID) -> LearnerProfile | None:
+        """SELECT ... FOR UPDATE on the org's profile row, held until the caller's
+        transaction ends."""
+        res = await self.session.execute(
+            select(LearnerProfile)
+            .where(
+                LearnerProfile.learner_id == learner_id,
+                LearnerProfile.organization_id == self.organization_id,
+            )
+            .with_for_update()
+        )
+        return res.scalar_one_or_none()
+
     async def list_active(self, limit: int = 1000, offset: int = 0) -> list[Learner]:
         res = await self.session.execute(
             self._scoped().where(Learner.status == "active").limit(limit).offset(offset)

@@ -1,0 +1,74 @@
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "user_id": 90232436,
+    "last_updated_at": "2026-09-16T05:18:05+03:00",
+    "profile": {
+      "fields": {
+        "id": 90232436,
+        "full_name": "Ardith Conn",
+        "mobile": null,
+        "email": "mreynolds@example.com",
+        "city": "Cairo",
+        "bio": null,
+        "linkedin_id": null,
+        "github_id": null,
+        "language": "en",
+        "timezone": null,
+        "payment_type": "bank",
+        "bank_name": "Factory Bank",
+        "iban": "EG380019000500000000263180002",
+        "identity_scan": null,
+        "cv": null,
+        "linkedin": null,
+        "github": null,
+        "job_preference": "Onsite",
+        "created_at": "2026-09-16T02:18:05.000000Z",
+        "is_profile_complete": false
+      },
+      "basic_info": {
+        "id": 90232436,
+        "email": "mreynolds@example.com",
+        "full_name": "Ardith Conn",
+        "learner_status": "active",
+        "verified_status": false,
+        "last_updated_at": null,
+        "bio": null,
+        "contact": {
+          "country_code": null,
+          "mobile_number": null
+        },
+        "media": {
+          "avatar": {
+            "cdn_url": null
+          }
+        },
+        "timezone": null,
+        "language": "en"
+      },
+      "location": {
+        "country": null,
+        "city": "Cairo"
+      },
+      "career": {
+        "years_of_experience": 0,
+        "current": null,
+        "experiences": []
+      },
+      "education": {
+        "educations": [],
+        "certifications_and_programs": []
+      },
+      "skills": {
+        "skills_list": []
+      },
+      "links": {
+        "github": null,
+        "linkedin": null,
+        "cv": null
+      },
+      "metas": []
+    }
+  }
+}

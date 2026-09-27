@@ -93,6 +93,32 @@ Headers: `Idempotency-Key` (optional; content hash used otherwise).
 Body envelope is identical across sources — `learner_id`, `occurred_at`,
 `external_id`, `metadata`, `payload|file` — so producers integrate once.
 
+### LMS webhooks (header `LC-API-KEY`)
+```
+POST /v1/webhooks/lms/learner            # → 202 {event_id, status: queued|ignored}
+```
+The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
+`occurred_at`) whenever a learner changes. It authenticates with the shared
+`LC-API-KEY` (our `LMS_API_KEY`), not an `lm_` API key; the organization is
+`LMS_ORGANIZATION_ID`. The integration is off until `LMS_BASE_URL`,
+`LMS_API_KEY` and `LMS_ORGANIZATION_ID` are all set (`503` otherwise).
+
+- `user_id` is matched to `learner.external_id`. No match is a `404`
+  ("not registered yet") — register the learner with its `external_id` first.
+- `api_url`'s `include=` only selects the sync. It is never requested: the
+  worker builds the URL from `LMS_BASE_URL`, so the key only goes to the LMS.
+- `include=profile` ("User updated", "users_metas created") queues
+  `lms.sync_learner_profile`. Other includes are acknowledged as `ignored`
+  until their syncs exist.
+
+The sync reads `…/learners/{user_id}/context?include=profile` and mirrors the
+personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
+`learner.display_name` from a non-empty `full_name`, and rewrites the profile
+snapshot's `personal` section with a `profile_version` bump. It is keyed on
+`event_id` (a redelivery is a no-op) and skips LMS data older than what was
+last applied (`external_updated_at`). Fields outside the mapping — including
+the financial ones the LMS sends — are dropped at parse time.
+
 ### Memory (scope `memory:read`)
 ```
 GET  /v1/learners/{id}/memory            # filter: source_type, card_type,
