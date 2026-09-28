@@ -28,7 +28,12 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Learner Memory & Profile", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="Learner Memory & Profile",
+        version="0.1.0",
+        lifespan=lifespan,
+        root_path=get_settings().root_path,
+    )
     app.include_router(learners.router, prefix="/v1")
     app.include_router(ingest.router, prefix="/v1")
     app.include_router(webhooks.router, prefix="/v1")
