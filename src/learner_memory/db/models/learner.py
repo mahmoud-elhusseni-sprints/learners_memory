@@ -19,12 +19,17 @@ class Learner(Base, OrgScoped, Timestamps):
     as the primary key, so ids stay identical across every learn-os service.
 
     `external_id` is the learner's LMS user id. LMS webhooks only carry that id,
-    so it is how an LMS event finds its learner; unique per organization."""
+    so it is how an LMS event finds its learner; unique per organization.
+    `external_journey_ids` are the LMS journeys the learner is enrolled in, kept
+    sorted."""
 
     __tablename__ = "learner"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     external_id: Mapped[int | None] = mapped_column(BigInteger)
+    external_journey_ids: Mapped[list[int]] = mapped_column(
+        ARRAY(BigInteger), default=list, server_default="{}"
+    )
     display_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="active")
     program_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))

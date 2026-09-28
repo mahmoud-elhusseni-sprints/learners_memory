@@ -1,14 +1,20 @@
-"""LMS learner context -> our PersonalInfoUpdate. The one place that knows which
-LMS field feeds which profile field."""
+"""LMS learner context -> our sync inputs. The one place that knows which LMS
+field feeds which of ours."""
 from __future__ import annotations
 
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from learner_memory.core.logging import get_logger
-from learner_memory.integrations.lms.schemas import LmsProfileContext
+from learner_memory.integrations.lms.schemas import LmsJourneyContext, LmsProfileContext
 from learner_memory.services.learner_profile_sync import PersonalInfoUpdate
 
 log = get_logger(__name__)
+
+
+def is_enrolled(context: LmsJourneyContext, journey_id: int) -> bool:
+    """Enrolled in `journey_id` and not blocked from it. No enrollment for the
+    journey means the learner left it (or never joined)."""
+    return any(e.journey_id == journey_id and not e.blocked for e in context.enrollments)
 
 
 def to_personal_info(context: LmsProfileContext) -> PersonalInfoUpdate:

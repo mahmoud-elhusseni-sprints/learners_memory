@@ -16,8 +16,6 @@ from learner_memory.api.v1 import webhooks
 from learner_memory.core.config import get_settings
 from learner_memory.db.models.learner import Learner
 from learner_memory.db.session import get_session
-from learner_memory.integrations.lms.schemas import LmsContext
-from learner_memory.integrations.lms.syncs import LmsSync, LmsSyncKind
 
 ORG = uuid.UUID("11111111-1111-1111-1111-111111111111")
 LEARNER = uuid.UUID("33333333-3333-3333-3333-333333333333")
@@ -110,37 +108,28 @@ def test_users_metas_event_runs_the_profile_sync(queued):
     assert queued[0][1]["kind"] == "profile"
 
 
-@pytest.fixture
-def journey_sync(monkeypatch) -> LmsSync:
-    """A scoped sync standing in for the journey one, which is not registered yet."""
-    async def apply(*_args):
-        return "applied"
-
-    sync = LmsSync(kind=LmsSyncKind.PROFILE, includes=("enrollments", "progress"),
-                   context_model=LmsContext, apply=apply, scope_param="journey_id")
-    monkeypatch.setattr(webhooks, "sync_for",
-                        lambda includes: sync if includes == {"enrollments", "progress"} else None)
-    return sync
-
-
-def test_scoped_event_queues_its_scope_id(queued, journey_sync):
+@pytest.mark.parametrize("event_name", ["content.created", "content.updated"])
+def test_journey_event_queues_the_journey_sync_for_its_journey(queued, event_name):
+    """"JourneyLearner created" and "journey progress changed" both sync the journey."""
     client = build_client(FakeLearners(LMS_USER_ID))
-    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654)
+    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654,
+                     event=event_name)
 
     resp = client.post(URL, json=event, headers=headers())
 
     assert resp.status_code == 202
-    assert queued[0][1]["scope_id"] == 1654
+    assert resp.json()["status"] == "queued"
+    assert (queued[0][1]["kind"], queued[0][1]["scope_id"]) == ("journey", 1654)
 
 
-def test_scoped_event_without_its_scope_id_is_rejected(queued, journey_sync):
+def test_journey_event_without_its_journey_id_is_rejected(queued):
     client = build_client(FakeLearners(LMS_USER_ID))
     event = an_event(include="enrollments%2Cprogress&journey_id=1654")
 
     resp = client.post(URL, json=event, headers=headers())
 
     assert resp.status_code == 422
-    assert resp.json()["detail"] == "profile events must carry journey_id"
+    assert resp.json()["detail"] == "journey events must carry journey_id"
     assert queued == []
 
 
@@ -203,8 +192,7 @@ def test_unregistered_learner_is_reported_not_registered(queued):
 
 def test_event_for_data_not_synced_yet_is_ignored(queued):
     client = build_client(FakeLearners(LMS_USER_ID))
-    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654,
-                     event="content.created")
+    event = an_event(include="certificates", event="content.created")
 
     resp = client.post(URL, json=event, headers=headers())
 

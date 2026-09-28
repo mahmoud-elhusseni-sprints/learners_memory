@@ -45,6 +45,7 @@ class PersonalInfoUpdate:
 
 class SyncOutcome(StrEnum):
     APPLIED = "applied"
+    UNCHANGED = "unchanged"
     STALE = "stale"
     UNKNOWN_LEARNER = "unknown_learner"
 

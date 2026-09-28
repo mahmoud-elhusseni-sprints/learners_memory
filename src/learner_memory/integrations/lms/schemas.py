@@ -113,6 +113,19 @@ class LmsProfileContext(LmsContext):
     profile: LmsProfile
 
 
+class LmsEnrollment(BaseModel):
+    journey_id: int
+    status: str | None = Field(max_length=32)
+    blocked: bool
+
+
+class LmsJourneyContext(LmsContext):
+    """`include=enrollments,progress`, narrowed by `journey_id`. Only enrollment is
+    kept, so `progress` is not declared and is dropped at parse time."""
+
+    enrollments: list[LmsEnrollment]
+
+
 ContextT = TypeVar("ContextT", bound=LmsContext)
 
 

@@ -50,7 +50,7 @@ async def _sync_learner(
                 external_id, sync.context_model, sync.includes, sync.scope(scope_id)
             )
         async with unit_of_work() as session:
-            outcome = await sync.apply(session, organization_id, external_id, context)
+            outcome = await sync.apply(session, organization_id, external_id, scope_id, context)
     except Exception as exc:
         await complete(key, error=_describe(exc))
         raise

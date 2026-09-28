@@ -17,26 +17,29 @@ from typing import Generic, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from learner_memory.db.repositories.learner import LearnerRepository
-from learner_memory.integrations.lms.mapping import to_personal_info
+from learner_memory.integrations.lms.mapping import is_enrolled, to_personal_info
 from learner_memory.integrations.lms.schemas import (
     ContextT,
+    LmsJourneyContext,
     LmsLearnerEvent,
     LmsProfileContext,
 )
+from learner_memory.services.learner_journey_sync import LearnerJourneySync
 from learner_memory.services.learner_profile_sync import LearnerProfileSync
 
 
 class LmsSyncKind(StrEnum):
     PROFILE = "profile"
+    JOURNEY = "journey"
 
 
 # The event fields that narrow a read to one record; each is also the name of
 # the context endpoint's query parameter.
 ScopeParam = Literal["journey_id", "form_id"]
 
-# (session, organization_id, external_id, context) -> outcome. Runs inside the
-# caller's transaction.
-Apply = Callable[[AsyncSession, uuid.UUID, int, ContextT], Awaitable[str]]
+# (session, organization_id, external_id, scope_id, context) -> outcome. Runs
+# inside the caller's transaction. `scope_id` is None for unscoped syncs.
+Apply = Callable[[AsyncSession, uuid.UUID, int, int | None, ContextT], Awaitable[str]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,10 +68,19 @@ class LmsSync(Generic[ContextT]):
 
 async def _apply_profile(
     session: AsyncSession, organization_id: uuid.UUID, external_id: int,
-    context: LmsProfileContext,
+    _scope_id: None, context: LmsProfileContext,
 ) -> str:
     sync = LearnerProfileSync(LearnerRepository(session, organization_id))
     return (await sync.apply(external_id, to_personal_info(context))).value
+
+
+async def _apply_journey(
+    session: AsyncSession, organization_id: uuid.UUID, external_id: int,
+    journey_id: int, context: LmsJourneyContext,
+) -> str:
+    sync = LearnerJourneySync(LearnerRepository(session, organization_id))
+    enrolled = is_enrolled(context, journey_id)
+    return (await sync.apply(external_id, journey_id, enrolled)).value
 
 
 _SYNCS: tuple[LmsSync, ...] = (
@@ -77,6 +89,15 @@ _SYNCS: tuple[LmsSync, ...] = (
         includes=("profile",),
         context_model=LmsProfileContext,
         apply=_apply_profile,
+    ),
+    # "JourneyLearner created" and "journey progress changed" both land here;
+    # progress itself is not kept.
+    LmsSync(
+        kind=LmsSyncKind.JOURNEY,
+        includes=("enrollments", "progress"),
+        context_model=LmsJourneyContext,
+        apply=_apply_journey,
+        scope_param="journey_id",
     ),
 )
 _BY_INCLUDES = {frozenset(sync.includes): sync for sync in _SYNCS}

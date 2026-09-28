@@ -11,7 +11,11 @@ from contextlib import asynccontextmanager
 import pytest
 
 from learner_memory.integrations.lms.client import LmsError
-from learner_memory.integrations.lms.schemas import LmsContext, LmsProfileContext
+from learner_memory.integrations.lms.schemas import (
+    LmsContext,
+    LmsJourneyContext,
+    LmsProfileContext,
+)
 from learner_memory.integrations.lms.syncs import LmsSync, LmsSyncKind, sync_for, sync_of
 from learner_memory.workers.tasks import lms as lms_tasks
 
@@ -28,13 +32,22 @@ def test_profile_include_picks_the_profile_sync():
     assert sync is sync_of("profile")
     assert sync.kind is LmsSyncKind.PROFILE
     assert sync.context_model is LmsProfileContext
+    assert sync.scope_param is None
+
+
+def test_enrollments_and_progress_include_picks_the_journey_sync():
+    sync = sync_for(frozenset({"progress", "enrollments"}))
+
+    assert sync is sync_of("journey")
+    assert sync.context_model is LmsJourneyContext
+    assert sync.scope_param == "journey_id"
 
 
 @pytest.mark.parametrize("includes", [
     frozenset(),
-    frozenset({"forms"}),
-    frozenset({"enrollments", "progress"}),
-    frozenset({"profile", "forms"}),
+    frozenset({"certificates"}),
+    frozenset({"enrollments"}),
+    frozenset({"profile", "enrollments", "progress"}),
 ])
 def test_includes_without_a_sync_pick_nothing(includes):
     assert sync_for(includes) is None
@@ -131,7 +144,7 @@ async def test_sync_reads_what_it_names_and_applies_it(ledger, lms):
     assert result == {"outcome": "applied"}
     assert lms.reads == [(LMS_USER_ID, LmsContext, ("enrollments", "progress"),
                           {"journey_id": 1654})]
-    assert applied == [(SESSION, ORG, LMS_USER_ID, CONTEXT)]
+    assert applied == [(SESSION, ORG, LMS_USER_ID, 1654, CONTEXT)]
     key = f"lms.sync_learner:{EVENT_ID}"
     assert ledger.claimed[0][:2] == ("lms.sync_learner", key)
     assert ledger.completed == [(key, None)]

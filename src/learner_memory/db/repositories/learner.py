@@ -103,6 +103,14 @@ class LearnerRepository(Repository[Learner]):
         res = await self.session.execute(self._scoped().where(Learner.external_id == external_id))
         return res.scalar_one_or_none()
 
+    async def lock_by_external_id(self, external_id: int) -> Learner | None:
+        """`get_by_external_id` with SELECT ... FOR UPDATE, held until the caller's
+        transaction ends."""
+        res = await self.session.execute(
+            self._scoped().where(Learner.external_id == external_id).with_for_update()
+        )
+        return res.scalar_one_or_none()
+
     async def lock_personal_data(self, learner_id: uuid.UUID) -> LearnerPersonalData | None:
         """SELECT ... FOR UPDATE, held until the caller's transaction ends.
 
