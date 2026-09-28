@@ -6,18 +6,14 @@ Redirects are not followed for the same reason.
 """
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 
 import httpx
 from pydantic import ValidationError
 
 from learner_memory.core.config import Settings
-from learner_memory.integrations.lms.schemas import (
-    PROFILE_INCLUDE,
-    LmsContextEnvelope,
-    LmsLearnerContext,
-)
+from learner_memory.integrations.lms.schemas import ContextT, LmsContextEnvelope
 
 API_KEY_HEADER = "LC-API-KEY"
 _CONTEXT_PATH = "api/learning-companion/v1/learners/{external_id}/context"
@@ -34,27 +30,35 @@ class LmsClient:
         `lms_client()` builds one from settings."""
         self._http = http
 
-    async def fetch_learner_profile(self, external_id: int) -> LmsLearnerContext:
-        """GET the learner's profile context.
+    async def fetch_context(
+        self,
+        external_id: int,
+        model: type[ContextT],
+        includes: Sequence[str],
+        scope: Mapping[str, int] | None = None,
+    ) -> ContextT:
+        """GET the parts of the learner's context named by `includes`, narrowed by
+        `scope` (e.g. {"journey_id": 1654}), parsed as `model`.
 
         Raises LmsError on a transport failure or timeout, a non-200 status,
         `success: false`, or a body that does not match the contract.
         """
         url = _CONTEXT_PATH.format(external_id=external_id)
+        params = {"include": ",".join(includes), **(scope or {})}
         try:
-            resp = await self._http.get(url, params={"include": PROFILE_INCLUDE})
+            resp = await self._http.get(url, params=params)
         except httpx.HTTPError as exc:
             raise LmsError(
                 f"LMS request for learner {external_id} failed: {type(exc).__name__}"
             ) from exc
         if resp.status_code != httpx.codes.OK:
             raise LmsError(f"LMS returned HTTP {resp.status_code} for learner {external_id}")
-        return _parse_context(resp.content, external_id)
+        return _parse_context(resp.content, model, external_id)
 
 
-def _parse_context(body: bytes, external_id: int) -> LmsLearnerContext:
+def _parse_context(body: bytes, model: type[ContextT], external_id: int) -> ContextT:
     try:
-        envelope = LmsContextEnvelope.model_validate_json(body)
+        envelope = LmsContextEnvelope[model].model_validate_json(body)
     except ValidationError as exc:
         # Field locations only: the offending values may be personal data.
         locations = sorted(".".join(map(str, err["loc"])) for err in exc.errors())

@@ -1,5 +1,6 @@
-"""LMS shapes at the boundary: the learner webhook envelope, and the part of the
-learner context response we use.
+"""LMS shapes at the boundary: the learner webhook envelope, and the parts of the
+learner context response we use. Each sync reads its own `include` of the context
+endpoint, so each has its own `LmsContext` subclass.
 
 The context response also carries financial and identity fields (IBAN, bank and
 wallet details, identity scans). Nothing here declares them, so they are dropped
@@ -12,14 +13,12 @@ silently wiping a field.
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from typing import Annotated, Generic, Literal, TypeVar
 from urllib.parse import parse_qs
 
 from pydantic import AnyHttpUrl, AwareDatetime, BaseModel, Field
 
 from learner_memory.schemas.learner import BIGINT_MAX
-
-PROFILE_INCLUDE = "profile"
 
 _URL_MAX = 2048
 _BIO_MAX = 10_000
@@ -39,6 +38,9 @@ class LmsLearnerEvent(BaseModel):
     user_id: int = Field(gt=0, le=BIGINT_MAX)
     api_url: AnyHttpUrl
     occurred_at: AwareDatetime
+    # Present only on events scoped to one journey or one form submission.
+    journey_id: int | None = Field(None, gt=0, le=BIGINT_MAX)
+    form_id: int | None = Field(None, gt=0, le=BIGINT_MAX)
 
     def includes(self) -> frozenset[str]:
         """The resources `api_url` asks for, e.g. {"profile"} or {"enrollments", "progress"}.
@@ -98,12 +100,22 @@ class LmsProfile(BaseModel):
     links: LmsLinks
 
 
-class LmsLearnerContext(BaseModel):
+class LmsContext(BaseModel):
+    """What every include of the context endpoint answers with."""
+
     user_id: int
     last_updated_at: AwareDatetime | None
+
+
+class LmsProfileContext(LmsContext):
+    """`include=profile`."""
+
     profile: LmsProfile
 
 
-class LmsContextEnvelope(BaseModel):
+ContextT = TypeVar("ContextT", bound=LmsContext)
+
+
+class LmsContextEnvelope(BaseModel, Generic[ContextT]):
     success: bool
-    data: LmsLearnerContext | None = None
+    data: ContextT | None = None

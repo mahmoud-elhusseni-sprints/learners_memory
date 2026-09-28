@@ -16,6 +16,8 @@ from learner_memory.api.v1 import webhooks
 from learner_memory.core.config import get_settings
 from learner_memory.db.models.learner import Learner
 from learner_memory.db.session import get_session
+from learner_memory.integrations.lms.schemas import LmsContext
+from learner_memory.integrations.lms.syncs import LmsSync, LmsSyncKind
 
 ORG = uuid.UUID("11111111-1111-1111-1111-111111111111")
 LEARNER = uuid.UUID("33333333-3333-3333-3333-333333333333")
@@ -89,11 +91,57 @@ def test_profile_event_for_a_registered_learner_is_queued(queued):
 
     assert resp.status_code == 202
     assert resp.json() == {"event_id": EVENT_ID, "status": "queued"}
-    assert queued == [("lms.sync_learner_profile", {
+    assert queued == [("lms.sync_learner", {
         "event_id": EVENT_ID,
         "external_id": 90232436,
         "organization_id": "11111111-1111-1111-1111-111111111111",
+        "kind": "profile",
+        "scope_id": None,
     })]
+
+
+def test_users_metas_event_runs_the_profile_sync(queued):
+    """"users_metas created" reads the same `include=profile` as "User updated"."""
+    client = build_client(FakeLearners(LMS_USER_ID))
+
+    resp = client.post(URL, json=an_event(event="content.created"), headers=headers())
+
+    assert resp.status_code == 202
+    assert queued[0][1]["kind"] == "profile"
+
+
+@pytest.fixture
+def journey_sync(monkeypatch) -> LmsSync:
+    """A scoped sync standing in for the journey one, which is not registered yet."""
+    async def apply(*_args):
+        return "applied"
+
+    sync = LmsSync(kind=LmsSyncKind.PROFILE, includes=("enrollments", "progress"),
+                   context_model=LmsContext, apply=apply, scope_param="journey_id")
+    monkeypatch.setattr(webhooks, "sync_for",
+                        lambda includes: sync if includes == {"enrollments", "progress"} else None)
+    return sync
+
+
+def test_scoped_event_queues_its_scope_id(queued, journey_sync):
+    client = build_client(FakeLearners(LMS_USER_ID))
+    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654)
+
+    resp = client.post(URL, json=event, headers=headers())
+
+    assert resp.status_code == 202
+    assert queued[0][1]["scope_id"] == 1654
+
+
+def test_scoped_event_without_its_scope_id_is_rejected(queued, journey_sync):
+    client = build_client(FakeLearners(LMS_USER_ID))
+    event = an_event(include="enrollments%2Cprogress&journey_id=1654")
+
+    resp = client.post(URL, json=event, headers=headers())
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "profile events must carry journey_id"
+    assert queued == []
 
 
 def test_api_url_host_never_reaches_the_sync(queued):
@@ -183,6 +231,8 @@ def test_mismatched_event_id_header_is_rejected(queued):
     {"event_id": "not-a-uuid"},
     {"occurred_at": "2026-09-16T05:18:05"},
     {"api_url": "not a url"},
+    {"journey_id": 0},
+    {"form_id": "abc"},
 ])
 def test_malformed_envelope_is_rejected(queued, overrides):
     client = build_client(FakeLearners(LMS_USER_ID))
