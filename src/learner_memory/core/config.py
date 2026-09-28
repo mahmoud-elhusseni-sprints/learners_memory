@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     env: str = "local"
     log_level: str = "INFO"
     api_port: int = 8000
+    root_path: str = ""
 
     database_url: str
     redis_url: str
