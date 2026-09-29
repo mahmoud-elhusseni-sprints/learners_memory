@@ -22,7 +22,7 @@ from learner_memory.integrations.lms.client import API_KEY_HEADER
 from learner_memory.integrations.lms.schemas import LmsLearnerEvent, LmsResource
 from learner_memory.schemas.webhook import WebhookAck, WebhookStatus
 from learner_memory.workers.celery_app import celery_app
-from learner_memory.workers.tasks.lms import SYNC_PROFILE_TASK
+from learner_memory.workers.tasks.lms import SYNC_JOURNEY_TASK, SYNC_PROFILE_TASK
 
 router = APIRouter(prefix="/webhooks/lms", tags=["webhooks"])
 log = get_logger(__name__)
@@ -41,10 +41,15 @@ def _no_extra_kwargs(_event: LmsLearnerEvent) -> dict:
     return {}
 
 
+def _journey_kwargs(event: LmsLearnerEvent) -> dict:
+    return {"journey_id": event.journey_id}
+
+
 # One webhook carries every learner event; this is where each resource finds
 # its sync. A resource missing here is acknowledged as ignored.
 _SYNCS: dict[LmsResource, _Sync] = {
     LmsResource.PROFILE: _Sync(SYNC_PROFILE_TASK, _no_extra_kwargs),
+    LmsResource.JOURNEY: _Sync(SYNC_JOURNEY_TASK, _journey_kwargs),
 }
 
 

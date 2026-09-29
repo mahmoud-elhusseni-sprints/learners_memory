@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     ARRAY, BigInteger, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Integer,
@@ -170,7 +171,7 @@ class LearningJourney(Base, UUIDPk, Timestamps):
     manual_added: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     graduated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    progress: Mapped[float] = mapped_column(Numeric(5, 4), default=0)
+    progress: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=0)
     plan: Mapped[dict] = mapped_column(JSONB, default=dict)
     enrollment_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

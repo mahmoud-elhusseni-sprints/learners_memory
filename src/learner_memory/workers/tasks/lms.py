@@ -11,11 +11,13 @@ from collections.abc import Awaitable, Callable
 
 from learner_memory.core.config import get_settings
 from learner_memory.core.logging import get_logger
+from learner_memory.db.repositories.journey import JourneyRepository
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.db.session import unit_of_work
 from learner_memory.integrations.lms.client import LmsError, lms_client
-from learner_memory.integrations.lms.mapping import to_personal_info
+from learner_memory.integrations.lms.mapping import to_journey_update, to_personal_info
 from learner_memory.services.external_sync import SyncOutcome
+from learner_memory.services.learner_journey_sync import LearnerJourneySync
 from learner_memory.services.learner_profile_sync import LearnerProfileSync
 from learner_memory.workers.celery_app import celery_app
 from learner_memory.workers.tasks.base import IdempotentTask, claim, complete, run_async
@@ -23,6 +25,7 @@ from learner_memory.workers.tasks.base import IdempotentTask, claim, complete, r
 log = get_logger(__name__)
 
 SYNC_PROFILE_TASK = "lms.sync_learner_profile"
+SYNC_JOURNEY_TASK = "lms.sync_learner_journey"
 
 
 @celery_app.task(name=SYNC_PROFILE_TASK, base=IdempotentTask)
@@ -45,6 +48,30 @@ async def _sync_learner_profile(
 
     args = {"event_id": str(event_id), "external_id": external_id}
     return await _run_once(SYNC_PROFILE_TASK, args, sync)
+
+
+@celery_app.task(name=SYNC_JOURNEY_TASK, base=IdempotentTask)
+def sync_learner_journey(event_id: str, external_id: int, organization_id: str,
+                         journey_id: int) -> dict:
+    return run_async(_sync_learner_journey(
+        uuid.UUID(event_id), external_id, uuid.UUID(organization_id), journey_id
+    ))
+
+
+async def _sync_learner_journey(
+    event_id: uuid.UUID, external_id: int, organization_id: uuid.UUID, journey_id: int
+) -> dict:
+    async def sync() -> SyncOutcome:
+        async with lms_client(get_settings()) as lms:
+            context = await lms.fetch_learner_journey(external_id, journey_id)
+        update = to_journey_update(context, journey_id)
+        async with unit_of_work() as session:
+            journey_sync = LearnerJourneySync(LearnerRepository(session, organization_id),
+                                              JourneyRepository(session))
+            return await journey_sync.apply(external_id, update)
+
+    args = {"event_id": str(event_id), "external_id": external_id, "journey_id": journey_id}
+    return await _run_once(SYNC_JOURNEY_TASK, args, sync)
 
 
 async def _run_once(

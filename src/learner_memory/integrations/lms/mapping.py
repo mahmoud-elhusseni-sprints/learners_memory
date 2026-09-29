@@ -1,14 +1,32 @@
-"""LMS learner context -> our PersonalInfoUpdate. The one place that knows which
-LMS field feeds which profile field."""
+"""LMS learner context -> our domain updates. The one place that knows which
+LMS field feeds which profile, journey or step field."""
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from learner_memory.core.logging import get_logger
-from learner_memory.integrations.lms.schemas import LmsProfileContext
+from learner_memory.integrations.lms.schemas import (
+    LmsEnrollment,
+    LmsJourneyContext,
+    LmsJourneyProgress,
+    LmsProfileContext,
+    LmsProgramCounters,
+)
+from learner_memory.services.learner_journey_sync import (
+    EnrollmentUpdate,
+    JourneyUpdate,
+    ProgramCounters,
+    ProgramProgress,
+    ProgressUpdate,
+)
 from learner_memory.services.learner_profile_sync import PersonalInfoUpdate
 
 log = get_logger(__name__)
+
+_PERCENT = Decimal(100)
+# learning_journey.progress is NUMERIC(5,4); round half up to its 4 places.
+_PROGRESS_PLACES = Decimal("0.0001")
 
 
 def to_personal_info(context: LmsProfileContext) -> PersonalInfoUpdate:
@@ -56,3 +74,57 @@ def _iana_timezone(value: str | None, external_id: int) -> str | None:
         log.warning("lms.timezone_unknown", external_id=external_id, timezone=name)
         return None
     return name
+
+
+def to_journey_update(context: LmsJourneyContext, journey_id: int) -> JourneyUpdate:
+    """The requested journey's enrollment and progress. Entries for any other
+    journey are ignored; either part is None when the LMS did not send it."""
+    enrollment = next((e for e in context.enrollments if e.journey_id == journey_id), None)
+    progress = next((p for p in context.progress if p.journey_id == journey_id), None)
+    return JourneyUpdate(
+        external_id=journey_id,
+        enrollment=_enrollment(enrollment) if enrollment is not None else None,
+        progress=_progress(progress) if progress is not None else None,
+    )
+
+
+def _enrollment(enrollment: LmsEnrollment) -> EnrollmentUpdate:
+    return EnrollmentUpdate(
+        slug=_text(enrollment.journey_slug),
+        public_url=_text(enrollment.public_url),
+        status=enrollment.status.strip(),
+        blocked=enrollment.blocked,
+        manual_added=enrollment.manual_added,
+        started_at=enrollment.start_date,
+        graduated_at=enrollment.graduation_date,
+        source_updated_at=enrollment.last_updated_at,
+    )
+
+
+def _progress(progress: LmsJourneyProgress) -> ProgressUpdate:
+    fraction = (progress.progress_percent / _PERCENT).quantize(_PROGRESS_PLACES,
+                                                               rounding=ROUND_HALF_UP)
+    return ProgressUpdate(
+        progress=fraction,
+        programs=tuple(ProgramProgress(external_id=program.program_id,
+                                       counters=_counters(program.counters))
+                       for program in progress.programs),
+        source_updated_at=progress.last_updated_at,
+    )
+
+
+def _counters(counters: LmsProgramCounters) -> ProgramCounters:
+    return ProgramCounters(
+        files_completed=counters.files_counter,
+        videos_completed=counters.videos_counter,
+        text_lessons_completed=counters.text_lessons_counter,
+        live_sessions_completed=counters.sessions_live_counter,
+        recorded_sessions_completed=counters.sessions_record_counter,
+        codelabs_completed=counters.codelabs_counter,
+        quizzes_completed=counters.quizzes_counter,
+        tasks_completed=counters.tasks_counter,
+        regular_projects_completed=counters.regular_projects_counter,
+        final_projects_completed=counters.final_projects_counter,
+        peer_reviews_completed=counters.peer_reviews_counter,
+        ai_interviews_completed=counters.ai_interviews_counter,
+    )

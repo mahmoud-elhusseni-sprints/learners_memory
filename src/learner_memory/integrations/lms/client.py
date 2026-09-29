@@ -14,9 +14,12 @@ from pydantic import ValidationError
 
 from learner_memory.core.config import Settings
 from learner_memory.integrations.lms.schemas import (
+    JOURNEY_INCLUDES,
     PROFILE_INCLUDE,
     ContextT,
     LmsEnvelope,
+    LmsJourneyContext,
+    LmsJourneyEnvelope,
     LmsProfileContext,
     LmsProfileEnvelope,
 )
@@ -44,6 +47,17 @@ class LmsClient:
         """
         body = await self._get_context(external_id, {"include": PROFILE_INCLUDE})
         return _parse_context(body, LmsProfileEnvelope, external_id)
+
+    async def fetch_learner_journey(self, external_id: int,
+                                    journey_id: int) -> LmsJourneyContext:
+        """GET the learner's enrollment and progress, filtered to one journey.
+
+        Raises LmsError under the same conditions as fetch_learner_profile.
+        """
+        params: dict[str, str | int] = {"include": ",".join(JOURNEY_INCLUDES),
+                                         "journey_id": journey_id}
+        body = await self._get_context(external_id, params)
+        return _parse_context(body, LmsJourneyEnvelope, external_id)
 
     async def _get_context(self, external_id: int, params: dict[str, str | int]) -> bytes:
         url = _CONTEXT_PATH.format(external_id=external_id)

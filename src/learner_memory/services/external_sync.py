@@ -9,6 +9,7 @@ class SyncOutcome(StrEnum):
     APPLIED = "applied"
     STALE = "stale"
     UNKNOWN_LEARNER = "unknown_learner"
+    NOT_FOUND = "not_found"            # the external system had nothing to apply
 
 
 def is_stale(applied_at: datetime | None, incoming_at: datetime | None) -> bool:
