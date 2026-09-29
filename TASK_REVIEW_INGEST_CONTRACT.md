@@ -84,9 +84,11 @@ one object. Both parse; a top-level key wins over the same key inside a section.
 
 ### Fields
 
-Every field is optional **except a non-empty submission** — without the learner's
-work there is nothing to extract, and the request is rejected. Aliases are
-accepted because the producer is outside our release cycle.
+Every field is optional **except a non-empty `submission` and a non-empty
+`report`** — without the learner's work there is nothing to point at, and without
+the grader's report there is no account of quality to read. A payload missing
+either one is rejected. Aliases are accepted because the producer is outside our
+release cycle.
 
 | field | aliases | why it matters |
 |---|---|---|
@@ -145,8 +147,8 @@ only links, not text it can read directly.
 
 Extraction is **asynchronous** — a `202` does not mean cards exist yet. Poll
 `GET /v1/ingest/documents/{document_id}` for `status` and `error`. A payload with
-an empty submission fails extraction with a clear error rather than producing
-nothing.
+an empty submission, or no grader report, fails extraction with a clear error
+rather than producing nothing.
 
 ---
 

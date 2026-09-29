@@ -91,6 +91,24 @@ def test_empty_submission_fails_loudly():
         TaskReview.from_document({"title": "T", "report": "ok"}).submission_or_raise()
 
 
+def test_missing_report_fails_loudly():
+    doc = {"title": "T", "submission": ["https://git.example/pr/9"], "grade": "ok"}
+    with pytest.raises(ValueError, match="no grader report"):
+        TaskReview.from_document(doc).report_or_raise()
+
+
+def test_blank_report_fails_loudly():
+    doc = {"title": "T", "submission": ["https://git.example/pr/9"], "report": "   "}
+    with pytest.raises(ValueError, match="no grader report"):
+        TaskReview.from_document(doc).report_or_raise()
+
+
+def test_parse_rejects_a_document_with_no_report():
+    doc = {"title": "T", "submission": ["https://git.example/pr/9"]}
+    with pytest.raises(ValueError, match="no grader report"):
+        _extractor().parse(_input(json.dumps(doc).encode()))
+
+
 # ------------------------------------------------------------------ agent
 
 

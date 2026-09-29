@@ -4,7 +4,9 @@ An upstream learn-os service posts us one document per reviewed submission — t
 task that was set, the learner's own work, and the grader's written report on it.
 Like the coderbyte contract, the model is deliberately tolerant: every field is
 optional and the common key spellings are accepted as aliases, because the
-producer is outside our release cycle.
+producer is outside our release cycle. Extraction is stricter than parsing: the
+submission URLs and the grader's report are both required before we draft a card,
+because they are the two halves of the evidence.
 
 The reviewer's own identity (name/email) is intentionally absent from the rendered
 text — the learner is identified by `learner_id` on the ingest envelope, and card
@@ -142,6 +144,18 @@ class TaskReview(BaseModel):
                 "empty submission (check the producer's field names)"
             )
         return self.submission
+
+    def report_or_raise(self) -> str:
+        """The grader's report is the only account of quality in the document: the
+        submission itself is never fetched, so without a report the model would be
+        left drafting praise from the task's requirements alone."""
+        if not (self.report or "").strip():
+            raise ValueError(
+                "task_review payload contains no grader report; refusing to extract "
+                "quality claims from the task requirements alone "
+                "(check the producer's field names)"
+            )
+        return self.report
 
     def to_text(self) -> str:
         """One self-contained, greppable block: the task, then the work, then the

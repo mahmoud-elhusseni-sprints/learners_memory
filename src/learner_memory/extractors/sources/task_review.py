@@ -61,6 +61,7 @@ class TaskReviewExtractor(BaseExtractor):
         doc = json.loads(data.raw.decode("utf-8", errors="replace"))
         review = TaskReview.from_document(doc)
         review.submission_or_raise()
+        review.report_or_raise()
         self._review = review
         return review.to_text()
 
