@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 
 from learner_memory.db.models.learner import LearnerPersonalData
 from learner_memory.db.repositories.learner import LearnerRepository
+from learner_memory.services.external_sync import SyncOutcome, is_stale
 
 PERSONAL_SECTION = "personal"
 
@@ -43,12 +43,6 @@ class PersonalInfoUpdate:
     source_updated_at: datetime | None
 
 
-class SyncOutcome(StrEnum):
-    APPLIED = "applied"
-    STALE = "stale"
-    UNKNOWN_LEARNER = "unknown_learner"
-
-
 class LearnerProfileSync:
     def __init__(self, learners: LearnerRepository) -> None:
         self._learners = learners
@@ -71,7 +65,7 @@ class LearnerProfileSync:
                 f"learner {learner.id} is missing its personal-data or profile row; "
                 "re-register the learner to recreate them"
             )
-        if _is_stale(personal.external_updated_at, update.source_updated_at):
+        if is_stale(personal.external_updated_at, update.source_updated_at):
             return SyncOutcome.STALE
 
         if update.full_name:
@@ -81,14 +75,6 @@ class LearnerProfileSync:
         profile.snapshot = {**profile.snapshot, PERSONAL_SECTION: personal_section(personal)}
         profile.profile_version += 1
         return SyncOutcome.APPLIED
-
-
-def _is_stale(applied_at: datetime | None, incoming_at: datetime | None) -> bool:
-    """Older than what is already applied. An equal time is not stale: the LMS
-    stamps seconds, so two edits within one second share a timestamp."""
-    if applied_at is None or incoming_at is None:
-        return False
-    return incoming_at < applied_at
 
 
 def _write_personal(personal: LearnerPersonalData, update: PersonalInfoUpdate) -> None:

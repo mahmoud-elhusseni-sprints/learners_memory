@@ -6,16 +6,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from learner_memory.integrations.lms.mapping import to_personal_info
-from learner_memory.integrations.lms.schemas import LmsContextEnvelope, LmsLearnerContext
+from learner_memory.integrations.lms.schemas import LmsProfileContext, LmsProfileEnvelope
 from learner_memory.services.learner_profile_sync import PersonalInfoUpdate
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "lms_learner_profile_context.json"
 
 
-def context(**basic_info_overrides) -> LmsLearnerContext:
+def context(**basic_info_overrides) -> LmsProfileContext:
     body = json.loads(FIXTURE.read_text(encoding="utf-8"))
     body["data"]["profile"]["basic_info"].update(basic_info_overrides)
-    return LmsContextEnvelope.model_validate(body).data
+    return LmsProfileEnvelope.model_validate(body).data
 
 
 def test_captured_user_updated_payload_maps_to_personal_info():
@@ -57,7 +57,7 @@ def test_filled_in_profile_maps_every_field():
                         "cv": "https://cdn.test/cv.pdf"}
     profile["fields"].update(github_id=4412, linkedin_id="li-77")
 
-    update = to_personal_info(LmsContextEnvelope.model_validate(body).data)
+    update = to_personal_info(LmsProfileEnvelope.model_validate(body).data)
 
     assert (update.bio, update.timezone) == ("Backend developer", "Africa/Cairo")
     assert (update.phone_country_code, update.phone) == ("+20", "1001234567")

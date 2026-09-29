@@ -5,13 +5,13 @@ from __future__ import annotations
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from learner_memory.core.logging import get_logger
-from learner_memory.integrations.lms.schemas import LmsLearnerContext
+from learner_memory.integrations.lms.schemas import LmsProfileContext
 from learner_memory.services.learner_profile_sync import PersonalInfoUpdate
 
 log = get_logger(__name__)
 
 
-def to_personal_info(context: LmsLearnerContext) -> PersonalInfoUpdate:
+def to_personal_info(context: LmsProfileContext) -> PersonalInfoUpdate:
     """Read the curated sections (`basic_info`, `location`, `links`) first; the raw
     `fields` row only for values nothing else carries."""
     profile = context.profile

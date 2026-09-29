@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import hmac
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -17,7 +19,7 @@ from learner_memory.core.config import Settings, get_settings
 from learner_memory.core.logging import get_logger
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.integrations.lms.client import API_KEY_HEADER
-from learner_memory.integrations.lms.schemas import PROFILE_INCLUDE, LmsLearnerEvent
+from learner_memory.integrations.lms.schemas import LmsLearnerEvent, LmsResource
 from learner_memory.schemas.webhook import WebhookAck, WebhookStatus
 from learner_memory.workers.celery_app import celery_app
 from learner_memory.workers.tasks.lms import SYNC_PROFILE_TASK
@@ -26,6 +28,24 @@ router = APIRouter(prefix="/webhooks/lms", tags=["webhooks"])
 log = get_logger(__name__)
 
 EVENT_ID_HEADER = "X-Learning-Companion-Event-Id"
+
+
+@dataclass(frozen=True, slots=True)
+class _Sync:
+    task: str
+    # Task kwargs specific to the resource, on top of the ones every sync gets.
+    extra_kwargs: Callable[[LmsLearnerEvent], dict]
+
+
+def _no_extra_kwargs(_event: LmsLearnerEvent) -> dict:
+    return {}
+
+
+# One webhook carries every learner event; this is where each resource finds
+# its sync. A resource missing here is acknowledged as ignored.
+_SYNCS: dict[LmsResource, _Sync] = {
+    LmsResource.PROFILE: _Sync(SYNC_PROFILE_TASK, _no_extra_kwargs),
+}
 
 
 def lms_organization(
@@ -75,15 +95,19 @@ async def receive_learner_event(
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"learner with external_id {event.user_id} is not registered yet")
 
-    includes = event.includes()
-    if PROFILE_INCLUDE not in includes:
-        log.info("lms.webhook_ignored", event_id=str(event.event_id), includes=sorted(includes))
+    resource = event.resource()
+    sync = _SYNCS.get(resource) if resource is not None else None
+    if sync is None:
+        log.info("lms.webhook_ignored", event_id=str(event.event_id),
+                 includes=sorted(event.includes()))
         return WebhookAck(event_id=event.event_id, status=WebhookStatus.IGNORED)
 
-    celery_app.send_task(SYNC_PROFILE_TASK, kwargs={
+    celery_app.send_task(sync.task, kwargs={
         "event_id": str(event.event_id),
         "external_id": event.user_id,
         "organization_id": str(organization_id),
+        **sync.extra_kwargs(event),
     })
-    log.info("lms.webhook_queued", event_id=str(event.event_id), external_id=event.user_id)
+    log.info("lms.webhook_queued", event_id=str(event.event_id), external_id=event.user_id,
+             resource=resource)
     return WebhookAck(event_id=event.event_id, status=WebhookStatus.QUEUED)

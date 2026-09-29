@@ -12,7 +12,8 @@ silently wiping a field.
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Literal
+from enum import StrEnum
+from typing import Annotated, Generic, Literal, TypeVar
 from urllib.parse import parse_qs
 
 from pydantic import AnyHttpUrl, AwareDatetime, BaseModel, Field
@@ -20,6 +21,18 @@ from pydantic import AnyHttpUrl, AwareDatetime, BaseModel, Field
 from learner_memory.schemas.learner import BIGINT_MAX
 
 PROFILE_INCLUDE = "profile"
+
+
+class LmsResource(StrEnum):
+    """What a webhook says changed; each resource has its own sync."""
+
+    PROFILE = "profile"
+
+
+# Checked in order: the first resource whose includes `api_url` all requests wins.
+_RESOURCE_INCLUDES: tuple[tuple[LmsResource, frozenset[str]], ...] = (
+    (LmsResource.PROFILE, frozenset({PROFILE_INCLUDE})),
+)
 
 _URL_MAX = 2048
 _BIO_MAX = 10_000
@@ -47,6 +60,11 @@ class LmsLearnerEvent(BaseModel):
         """
         values = parse_qs(self.api_url.query or "").get("include", [])
         return frozenset(part for value in values for part in value.split(",") if part)
+
+    def resource(self) -> LmsResource | None:
+        """The resource this event is about, or None for one we do not sync."""
+        includes = self.includes()
+        return next((res for res, needed in _RESOURCE_INCLUDES if needed <= includes), None)
 
 
 class LmsContact(BaseModel):
@@ -98,12 +116,23 @@ class LmsProfile(BaseModel):
     links: LmsLinks
 
 
-class LmsLearnerContext(BaseModel):
+class LmsContextData(BaseModel):
+    """What every learner context response carries, whatever it includes."""
+
     user_id: int
+
+
+class LmsProfileContext(LmsContextData):
     last_updated_at: AwareDatetime | None
     profile: LmsProfile
 
 
-class LmsContextEnvelope(BaseModel):
+ContextT = TypeVar("ContextT", bound=LmsContextData)
+
+
+class LmsEnvelope(BaseModel, Generic[ContextT]):
     success: bool
-    data: LmsLearnerContext | None = None
+    data: ContextT | None = None
+
+
+LmsProfileEnvelope = LmsEnvelope[LmsProfileContext]
