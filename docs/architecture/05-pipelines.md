@@ -44,9 +44,12 @@ Failure modes, handled explicitly:
 - **LLM schema violation** → one repair round-trip, then partial accept (valid
   cards kept, invalid chunk recorded in `error`), document marked
   `extracted_partial` so a backfill can revisit just that chunk.
-- **Unknown learner** → document parked at `pending_identity`; it is picked up
-  once that `learner_id` is registered (`POST /v1/learners`), which re-enqueues
-  extraction.
+- **Unknown learner** → document parked at `pending_identity`. Nothing picks it
+  up again today: registration does not re-enqueue extraction, the unresolved
+  `learner_id` is recorded in the document's metadata but never read back as its
+  owner, and `maintenance.retry_failed_documents` only retries `failed`. A
+  resolver that drains parked documents on registration is not built yet; the
+  ingest contracts tell producers to register the learner first.
 
 ## 5.3 Profile synthesis pipeline
 

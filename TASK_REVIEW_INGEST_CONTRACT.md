@@ -135,7 +135,7 @@ only links, not text it can read directly.
 | status | meaning |
 |---|---|
 | `received` | queued for extraction |
-| `pending_identity` | archived, but that `learner_id` is not registered yet. Nothing is lost — it is picked up once the learner is registered. |
+| `pending_identity` | archived, but that `learner_id` is not registered yet. **No cards are produced, and nothing picks the document up later** — see §5. |
 
 **Other codes**
 
@@ -163,9 +163,21 @@ rather than producing nothing.
 
 ---
 
-## 5. Checklist before you send
+## 5. Known gaps
 
-- [ ] `learner_id` is the learn-os uuid and that learner is registered
+- **A document posted before the learner is registered produces nothing.** It is
+  archived at `pending_identity`, but there is no automatic backfill and no manual
+  recovery today: the unregistered `learner_id` is not kept as the document's
+  owner, so `POST /v1/ingest/documents/{document_id}/reprocess` parks it again,
+  and a byte-identical re-post is deduplicated back to the same parked document.
+  **Register the learner before you post.** If you need a resolver that picks
+  parked documents up on registration, say so.
+
+---
+
+## 6. Checklist before you send
+
+- [ ] `learner_id` is the learn-os uuid and that learner is **already registered** (§5)
 - [ ] `occurred_at` is when the submission was reviewed
 - [ ] `external_id` is set, stable, and distinguishes iterations
 - [ ] `submission` is a non-empty list of URLs to the learner's actual work

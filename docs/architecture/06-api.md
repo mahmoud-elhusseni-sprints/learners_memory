@@ -39,7 +39,8 @@ Re-registering without the field keeps the stored value; it is never cleared.
 Ingest identifies the learner by that same `learner_id` — it is the only
 learner key in the system, so producers must carry the learn-os uuid. Evidence
 for a learner who is not yet registered is archived and parked at
-`pending_identity` rather than rejected.
+`pending_identity` rather than rejected — and stays there: nothing drains parked
+documents today (see `05-pipelines.md`).
 
 ### Ingestion (scope `memory:write`)
 ```
@@ -105,6 +106,10 @@ The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
 
 - `user_id` is matched to `learner.external_id`. No match is a `404`
   ("not registered yet") — register the learner with its `external_id` first.
+  **The event is then dropped**: the webhook is the only sender of
+  `lms.sync_learner_profile`, and registration does not pull the profile, so the
+  update is lost unless the LMS redelivers the `404`. Register before the LMS
+  starts sending.
 - `api_url`'s `include=` only selects the sync. It is never requested: the
   worker builds the URL from `LMS_BASE_URL`, so the key only goes to the LMS.
 - `include=profile` ("User updated", "users_metas created") queues
