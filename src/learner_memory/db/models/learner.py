@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
-    ARRAY, Boolean, Date, DateTime, Float, ForeignKey, Integer, Numeric,
-    SmallInteger, String, Text, UniqueConstraint,
+    ARRAY, BigInteger, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Integer,
+    Numeric, SmallInteger, String, Text, UniqueConstraint, false,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,17 +17,25 @@ from learner_memory.db.base import Base, OrgScoped, Timestamps, UUIDPk
 
 class Learner(Base, OrgScoped, Timestamps):
     """The learner id is *supplied by the caller* at registration and used verbatim
-    as the primary key, so ids stay identical across every learn-os service."""
+    as the primary key, so ids stay identical across every learn-os service.
+
+    `external_id` is the learner's LMS user id. LMS webhooks only carry that id,
+    so it is how an LMS event finds its learner; unique per organization."""
 
     __tablename__ = "learner"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    external_id: Mapped[int | None] = mapped_column(BigInteger)
     display_name: Mapped[str | None] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(32), default="active")
     program_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))
     cohort_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True))
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "external_id", name="uq_learner_org_external_id"),
+    )
 
 
 class LearnerPersonalData(Base, Timestamps):
@@ -40,6 +49,7 @@ class LearnerPersonalData(Base, Timestamps):
     )
     email: Mapped[str | None] = mapped_column(String(320))
     phone: Mapped[str | None] = mapped_column(String(64))
+    phone_country_code: Mapped[str | None] = mapped_column(String(8))
     location: Mapped[dict] = mapped_column(JSONB, default=dict)
     contact: Mapped[dict] = mapped_column(JSONB, default=dict)
     education: Mapped[list] = mapped_column(JSONB, default=list)
@@ -47,6 +57,19 @@ class LearnerPersonalData(Base, Timestamps):
     languages: Mapped[list] = mapped_column(JSONB, default=list)
     learning_preferences: Mapped[dict] = mapped_column(JSONB, default=dict)
     source_of_truth: Mapped[dict] = mapped_column(JSONB, default=dict)
+    bio: Mapped[str | None] = mapped_column(Text)
+    avatar_url: Mapped[str | None] = mapped_column(Text)
+    timezone: Mapped[str | None] = mapped_column(String(64))           # IANA name
+    preferred_language: Mapped[str | None] = mapped_column(String(16))
+    job_preference: Mapped[str | None] = mapped_column(String(32))
+    github_url: Mapped[str | None] = mapped_column(Text)
+    linkedin_url: Mapped[str | None] = mapped_column(Text)
+    cv_url: Mapped[str | None] = mapped_column(Text)
+    github_id: Mapped[str | None] = mapped_column(String(255))
+    linkedin_id: Mapped[str | None] = mapped_column(String(255))
+    # The LMS `last_updated_at` of the profile last applied here; an LMS response
+    # older than this is stale and must not overwrite newer data.
+    external_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class SkillCatalog(Base, UUIDPk, Timestamps):
@@ -123,6 +146,14 @@ class CareerGoal(Base, UUIDPk, Timestamps):
 
 
 class LearningJourney(Base, UUIDPk, Timestamps):
+    """The learning journey the LMS assigned the learner — one row per LMS journey.
+
+    The LMS owns enrollment and progress: only the LMS sync writes those columns.
+    `progress` is a 0..1 fraction (the LMS sends a percentage). The two
+    `*_updated_at` columns are the LMS's own change times for enrollment and
+    progress; each part is applied only if it is not older than the last one.
+    """
+
     __tablename__ = "learning_journey"
 
     learner_id: Mapped[uuid.UUID] = mapped_column(
@@ -131,27 +162,77 @@ class LearningJourney(Base, UUIDPk, Timestamps):
     career_goal_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("career_goal.id", ondelete="SET NULL")
     )
-    name: Mapped[str] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(32), default="active")
-    progress: Mapped[float] = mapped_column(Numeric(5, 4), default=0)
+    external_id: Mapped[int | None] = mapped_column(BigInteger)      # LMS journey_id
+    name: Mapped[str | None] = mapped_column(String(255))            # the LMS sends no title yet
+    slug: Mapped[str | None] = mapped_column(String(255))
+    public_url: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="active")  # LMS value, verbatim
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    manual_added: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    graduated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    progress: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=0)
     plan: Mapped[dict] = mapped_column(JSONB, default=dict)
+    enrollment_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    progress_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        UniqueConstraint("learner_id", "external_id",
+                         name="uq_learning_journey_learner_external_id"),
+        CheckConstraint("progress >= 0 AND progress <= 1",
+                        name="ck_learning_journey_progress_fraction"),
+    )
 
 
 class JourneyStep(Base, UUIDPk, Timestamps):
+    """A program within the journey — one row per LMS program.
+
+    The `*_completed` counters are how many items of each kind the learner has
+    completed in the program. The LMS sends no totals, so completion cannot be
+    derived: `status` stays null (unknown) for LMS steps.
+    """
+
     __tablename__ = "journey_step"
 
     journey_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("learning_journey.id", ondelete="CASCADE"), index=True
     )
+    external_id: Mapped[int | None] = mapped_column(BigInteger)      # LMS program_id
     ord: Mapped[int] = mapped_column(Integer, default=0)
-    title: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(255))           # the LMS sends no title yet
     kind: Mapped[str | None] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(32), default="planned")
+    status: Mapped[str | None] = mapped_column(String(32))
+    files_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    videos_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    text_lessons_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    live_sessions_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    recorded_sessions_completed: Mapped[int] = mapped_column(Integer, default=0,
+                                                             server_default="0")
+    codelabs_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    quizzes_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    tasks_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    regular_projects_completed: Mapped[int] = mapped_column(Integer, default=0,
+                                                            server_default="0")
+    final_projects_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    peer_reviews_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    ai_interviews_completed: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     evidence_card_ids: Mapped[list[uuid.UUID]] = mapped_column(
         ARRAY(PGUUID(as_uuid=True)), default=list
     )
     details: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+    __table_args__ = (
+        UniqueConstraint("journey_id", "external_id", name="uq_journey_step_journey_external_id"),
+        CheckConstraint(
+            "files_completed >= 0 AND videos_completed >= 0 AND text_lessons_completed >= 0"
+            " AND live_sessions_completed >= 0 AND recorded_sessions_completed >= 0"
+            " AND codelabs_completed >= 0 AND quizzes_completed >= 0 AND tasks_completed >= 0"
+            " AND regular_projects_completed >= 0 AND final_projects_completed >= 0"
+            " AND peer_reviews_completed >= 0 AND ai_interviews_completed >= 0",
+            name="ck_journey_step_counters_non_negative",
+        ),
+    )
 
 
 class LearnerProfile(Base, OrgScoped, Timestamps):

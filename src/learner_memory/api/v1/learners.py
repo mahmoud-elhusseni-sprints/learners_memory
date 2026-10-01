@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 
 from learner_memory.api.deps import AuthDep, LearnerRepoDep
 from learner_memory.core.logging import get_logger
+from learner_memory.db.repositories.learner import ExternalIdTaken
 from learner_memory.schemas.learner import (
     LearnerProfileResponse,
     LearnerRegisterRequest,
@@ -29,15 +30,22 @@ async def register_learner(
     The id in the body becomes the primary key verbatim, keeping learner ids
     identical across learn-os services. Idempotent: re-posting the same id
     refreshes the mutable fields and returns 200 instead of 201.
+
+    `external_id` (the LMS user id) must be unique per organization; claiming one
+    already held by a different learner is a 409.
     """
     auth.require("profile:write")
-    learner, created = await repo.register(
-        learner_id=body.id,
-        display_name=body.display_name,
-        program_id=body.program_id,
-        cohort_id=body.cohort_id,
-        metadata=body.metadata,
-    )
+    try:
+        learner, created = await repo.register(
+            learner_id=body.id,
+            external_id=body.external_id,
+            display_name=body.display_name,
+            program_id=body.program_id,
+            cohort_id=body.cohort_id,
+            metadata=body.metadata,
+        )
+    except ExternalIdTaken as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     if not created:
         response.status_code = status.HTTP_200_OK
     log.info("learner.registered", learner_id=str(body.id), created=created)

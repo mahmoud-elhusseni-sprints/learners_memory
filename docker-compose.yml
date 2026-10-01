@@ -14,6 +14,7 @@ x-app: &app
     - ./src:/app/src
     - ./docs:/app/docs
     - ./scripts:/app/scripts   # so a new script runs without rebuilding the image
+    - ./alembic:/app/alembic   # so a new migration runs without rebuilding the image
   depends_on:
     postgres: {condition: service_healthy}
     redis: {condition: service_started}
@@ -23,7 +24,7 @@ services:
   api:
     <<: *app
     command: uvicorn learner_memory.main:app --host 0.0.0.0 --port 8000 --reload
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8013:8000"]   # 8000 is taken by the ai-grader api
 
   worker-extract:
     <<: *app

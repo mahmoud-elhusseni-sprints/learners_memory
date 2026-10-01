@@ -19,6 +19,7 @@ GET  /v1/learners/{learner_id}
 ```jsonc
 // POST /v1/learners
 { "id": "0f7c...-uuid-issued-by-learn-os",   // stored verbatim as the PK
+  "external_id": 90232436,                    // optional: the learner's LMS user id
   "display_name": "…", "program_id": "…", "cohort_id": "…", "metadata": {} }
 ```
 The learner id is **never generated here**. The upstream learn-os service issues
@@ -30,10 +31,16 @@ Registration also creates the empty personal-data and profile rows, so reads
 never have to special-case a learner who has been registered but not yet
 processed.
 
+`external_id` is the learner's LMS user id — LMS webhooks carry only that id,
+so a learner registered without it cannot receive LMS updates. It is unique per
+organization: claiming an id already held by a different learner is a `409`.
+Re-registering without the field keeps the stored value; it is never cleared.
+
 Ingest identifies the learner by that same `learner_id` — it is the only
 learner key in the system, so producers must carry the learn-os uuid. Evidence
 for a learner who is not yet registered is archived and parked at
-`pending_identity` rather than rejected.
+`pending_identity` rather than rejected — and stays there: nothing drains parked
+documents today (see `05-pipelines.md`).
 
 ### Ingestion (scope `memory:write`)
 ```
@@ -87,6 +94,51 @@ Headers: `Idempotency-Key` (optional; content hash used otherwise).
 Body envelope is identical across sources — `learner_id`, `occurred_at`,
 `external_id`, `metadata`, `payload|file` — so producers integrate once.
 
+### LMS webhooks (header `LC-API-KEY`)
+```
+POST /v1/webhooks/lms/learner            # → 202 {event_id, status: queued|ignored}
+```
+The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
+`occurred_at`) whenever a learner changes. It authenticates with the shared
+`LC-API-KEY` (our `LMS_API_KEY`), not an `lm_` API key; the organization is
+`LMS_ORGANIZATION_ID`. The integration is off until `LMS_BASE_URL`,
+`LMS_API_KEY` and `LMS_ORGANIZATION_ID` are all set (`503` otherwise).
+
+- `user_id` is matched to `learner.external_id`. No match is a `404`
+  ("not registered yet") — register the learner with its `external_id` first.
+  **The event is then dropped**: the webhook is the only sender of the
+  `lms.sync_*` tasks, and registration does not pull from the LMS, so the
+  update is lost unless the LMS redelivers the `404`. Register before the LMS
+  starts sending.
+- `api_url`'s `include=` only selects the sync. It is never requested: the
+  worker builds the URL from `LMS_BASE_URL`, so the key only goes to the LMS.
+- Every learner event arrives on this one endpoint; `include=` picks the sync:
+
+  | `include=` | LMS trigger | Sync |
+  |---|---|---|
+  | `profile` | User updated, users_metas created | `lms.sync_learner_profile` |
+  | `enrollments,progress` (+ body `journey_id`, required) | JourneyLearner created, cached journey progress changed | `lms.sync_learner_journey` |
+  | anything else (e.g. `forms`) | — | acknowledged as `ignored` |
+
+The sync reads `…/learners/{user_id}/context?include=profile` and mirrors the
+personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
+`learner.display_name` from a non-empty `full_name`, and rewrites the profile
+snapshot's `personal` section with a `profile_version` bump. It is keyed on
+`event_id` (a redelivery is a no-op) and skips LMS data older than what was
+last applied (`external_updated_at`). Fields outside the mapping — including
+the financial ones the LMS sends — are dropped at parse time.
+
+The journey sync reads `…/context?include=enrollments,progress&journey_id=…`.
+The LMS journey is the learner's `learning_journey` (created on first sight
+from its enrollment) and each program in it a `journey_step` of kind `program`.
+Enrollment fields and progress are applied separately, each skipped when older
+than the last applied (`enrollment_updated_at`, `progress_updated_at`).
+`progress_percent` is stored as a 0..1 fraction (4 places, half up); program
+counters are items *completed* and land in the step's `*_completed` columns.
+Step `status` stays null — the LMS sends no totals, so completion is unknown —
+and steps are never removed. The snapshot's `career.journeys` is rebuilt from
+the tables with a `profile_version` bump.
+
 ### Memory (scope `memory:read`)
 ```
 GET  /v1/learners/{id}/memory            # filter: source_type, card_type,
@@ -105,7 +157,6 @@ GET  /v1/learners/{id}/profile/skills    # 34 general subskills + technical
 GET  /v1/learners/{id}/profile/skills/{slug}/evidence   # → cards → documents
 PATCH/v1/learners/{id}/profile/personal  # human-authored, pins source_of_truth
 PUT  /v1/learners/{id}/career-goal
-PATCH/v1/learners/{id}/journey/steps/{step_id}
 POST /v1/learners/{id}/profile/recompute # 202, force synthesis
 GET  /v1/learners/{id}/profile/history   # assessment timeline per skill
 ```
@@ -148,9 +199,12 @@ GET  /healthz  /readyz  /metrics
   },
   "career": {
     "goal": {"target_role": "ML Engineer", "target_date": "2027-06-01", ...},
-    "journey": {"name": "...", "progress": 0.38,
-                "steps": [{"title": "...", "status": "done",
-                           "completed_at": "...", "evidence_card_ids": [...]}]}
+    "journeys": [                       // written by the LMS journey sync
+      { "external_id": 1654, "name": null, "slug": "...", "public_url": "...",
+        "status": "in_progress", "blocked": false, "manual_added": false,
+        "started_at": "...", "graduated_at": null, "progress": 0.38,
+        "steps": [{"external_id": 2001668, "kind": "program", "title": null,
+                   "status": null, "completed": {"videos_completed": 3, ...}}]}]
   }
 }
 ```

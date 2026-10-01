@@ -1,12 +1,28 @@
-Source: a segment of a meeting transcript. Turns are "SPEAKER: text".
-The learner speaks as: {{ speaker_label }}
-Occurred at: {{ occurred_at }}
+Source: a segment of a meeting transcript, diarized into "SPEAKER: text" turns.
+Held at: {{ occurred_at }}
+{% if meeting_type %}Meeting type: {{ meeting_type }}{% endif %}
+{% if title %}Title: {{ title }}{% endif %}
+Learner speakers (set subject_label to one of these): {{ participants }}
 
-Only extract evidence about the learner's own turns. Other participants are
-context — never attribute their statements or skills to the learner.
+{% if analysis %}
+A prior pass produced this per-participant analysis. Treat it as a lead, not as
+fact — every card must still stand on the transcript below.
 
---- TRANSCRIPT ---
+--- ANALYSIS ---
+{{ analysis }}
+--- END ANALYSIS ---
+{% endif %}
+{% if guidance %}
+A reviewer rejected your previous drafts. Fix this before answering:
+
+--- REVIEW ---
+{{ guidance }}
+--- END REVIEW ---
+{% endif %}
+
+--- TRANSCRIPT SEGMENT ---
 {{ chunk }}
---- END TRANSCRIPT ---
+--- END TRANSCRIPT SEGMENT ---
 
-Return JSON matching the ExtractionResult schema.
+Return JSON matching the ExtractionResult schema. Every card must set
+subject_label to the learner speaker it is about.

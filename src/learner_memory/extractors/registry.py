@@ -42,9 +42,15 @@ def register(cls: type["BaseExtractor"]) -> type["BaseExtractor"]:
 
 def get_extractor(source_type: SourceType | str) -> "BaseExtractor":
     """Factory: source type -> ready-to-run extractor instance."""
+    return extractor_class(source_type)()
+
+
+def extractor_class(source_type: SourceType | str) -> type["BaseExtractor"]:
+    """The registered class, for reading its class attributes (e.g. `multi_learner`)
+    without paying to construct an instance and its agent graph."""
     key = SourceType(source_type)
     try:
-        return _REGISTRY[key]()
+        return _REGISTRY[key]
     except KeyError as exc:
         raise UnknownSourceType(f"no extractor registered for '{key}'") from exc
 

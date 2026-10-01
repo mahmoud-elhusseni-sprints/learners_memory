@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from learner_memory.api.deps import AuthDep, LearnerRepoDep, SessionDep
 from learner_memory.db.repositories.document import DocumentRepository
-from learner_memory.extractors.registry import UnknownSourceType, supported_sources
+from learner_memory.extractors.registry import extractor_class, supported_sources
 from learner_memory.schemas.ingest import IngestRequest, IngestResponse
 from learner_memory.schemas.memory_card import SourceType
 from learner_memory.services.ingest import IngestService
@@ -15,6 +15,29 @@ from learner_memory.storage.supabase import get_storage
 from learner_memory.workers.celery_app import celery_app
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
+
+PARTICIPANTS_KEY = "participants"
+
+
+def _require_subjects(source_type: SourceType, body: IngestRequest, multi_learner: bool) -> None:
+    """Enforce the identity contract at the boundary, before anything is archived.
+
+    A single-learner source needs its `learner_id`; a multi-learner source needs a
+    non-empty `metadata.participants` map (speaker label -> learner id) instead.
+    """
+    if multi_learner:
+        roster = body.metadata.get(PARTICIPANTS_KEY)
+        if not isinstance(roster, dict) or not roster:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"'{source_type.value}' requires a non-empty metadata.{PARTICIPANTS_KEY} "
+                "map of {speaker_label: learner_id}",
+            )
+    elif body.learner_id is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"learner_id is required for '{source_type.value}'",
+        )
 
 
 @router.get("/sources", response_model=list[str])
@@ -37,13 +60,16 @@ async def ingest(
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             f"no extractor for '{source_type}'; have {supported_sources()}")
 
+    multi_learner = extractor_class(source_type).multi_learner
+    _require_subjects(source_type, body, multi_learner)
+
     service = IngestService(
         documents=DocumentRepository(session, auth.organization_id),
         learners=learners,
         storage=get_storage(),
         organization_id=auth.organization_id,
     )
-    result = await service.ingest(source_type, body)
+    result = await service.ingest(source_type, body, multi_learner=multi_learner)
 
     if not result.duplicate and result.status == "received":
         celery_app.send_task(

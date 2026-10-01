@@ -16,7 +16,12 @@ class IngestRequest(BaseModel):
     `build_context` untouched.
     """
 
-    learner_id: uuid.UUID = Field(description="Learner id issued by the upstream learn-os service")
+    learner_id: uuid.UUID | None = Field(
+        None,
+        description="Learner id issued by the upstream learn-os service. Required for "
+        "single-learner sources; multi-learner sources (meeting transcript) leave it "
+        "unset and identify participants via metadata instead.",
+    )
     occurred_at: datetime = Field(description="When the evidence happened, not when sent")
     external_id: str | None = Field(None, description="Producer's id, for dedupe")
     payload: str | dict | None = None

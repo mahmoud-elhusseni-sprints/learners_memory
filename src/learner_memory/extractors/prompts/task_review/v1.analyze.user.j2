@@ -1,0 +1,9 @@
+Submission reviewed at: {{ occurred_at }}
+{% if task_headline %}Task: {{ task_headline }}{% endif %}
+{% if iteration %}Iteration: {{ iteration }}{% endif %}
+
+--- TASK, SUBMISSION AND REVIEW ---
+{{ chunk }}
+--- END ---
+
+Return JSON matching the TaskReviewAnalysis schema.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from sqlalchemy import select
@@ -10,7 +11,7 @@ from learner_memory.core.logging import get_logger
 from learner_memory.db.models.raw import CardContribution, MemoryCardRecord, RawDocument
 from learner_memory.db.session import unit_of_work
 from learner_memory.extractors.base import ExtractionInput
-from learner_memory.extractors.registry import get_extractor
+from learner_memory.extractors.registry import extractor_class, get_extractor
 from learner_memory.llm.client import TraceContext, get_llm_client
 from learner_memory.schemas.memory_card import CardStatus, MemoryCard
 from learner_memory.storage.supabase import get_storage
@@ -50,8 +51,12 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
                 "metadata": dict(doc.metadata_ or {}),
             }
 
-        if snapshot["learner_id"] is None:
-            # Cards cannot be attributed yet; leave the document for identity resolution.
+        multi_learner = extractor_class(snapshot["source_type"]).multi_learner
+        participants = _participants(snapshot["metadata"]) if multi_learner else {}
+
+        # Cards cannot be attributed yet; leave the document for identity resolution.
+        # Single-learner: no owner. Multi-learner: no registered participant.
+        if (multi_learner and not participants) or (not multi_learner and snapshot["learner_id"] is None):
             async with unit_of_work() as s:
                 (await s.execute(select(RawDocument).where(RawDocument.id == document_id))
                  ).scalar_one().status = "pending_identity"
@@ -64,7 +69,8 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
             ExtractionInput(
                 document_id=document_id,
                 organization_id=snapshot["organization_id"],
-                learner_id=snapshot["learner_id"],
+                learner_id=None if multi_learner else snapshot["learner_id"],
+                participants=participants,
                 occurred_at=snapshot["occurred_at"],
                 raw=raw,
                 metadata=snapshot["metadata"],
@@ -74,6 +80,7 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
         if cards:
             await _persist_cards(cards, extractor.version)
 
+        # ME: update the document record with the extractor version and mark it as extracted
         async with unit_of_work() as s:
             doc = (await s.execute(select(RawDocument).where(RawDocument.id == document_id))
                    ).scalar_one()
@@ -82,15 +89,17 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
 
         await complete(key)
 
-        dimensions = sorted({c.index_key for card in cards for c in card.contributions})
-        if dimensions:
+        # ME: schedule profile recompute for each learner affected by the new cards
+        by_learner = _dimensions_by_learner(cards)
+        for learner_id, dimensions in by_learner.items():
             celery_app.send_task(
                 "profile.schedule_recompute",
-                kwargs={"learner_id": str(snapshot["learner_id"]), "dimensions": dimensions},
+                kwargs={"learner_id": str(learner_id), "dimensions": sorted(dimensions)},
             )
-        return {"cards": len(cards), "dimensions": dimensions}
+        return {"cards": len(cards), "learners": len(by_learner)}
 
     except Exception as exc:
+        # ME: mark the document as failed so it can be inspected and reprocessed
         async with unit_of_work() as s:
             doc = (await s.execute(select(RawDocument).where(RawDocument.id == document_id))
                    ).scalar_one_or_none()
@@ -99,6 +108,21 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
                 doc.error = {"message": str(exc)}
         await complete(key, error=str(exc))
         raise
+
+
+def _participants(metadata: dict) -> dict[str, uuid.UUID]:
+    """The registered roster the ingest service stored: label -> learner id."""
+    roster = metadata.get("participants") or {}
+    return {label: uuid.UUID(str(raw)) for label, raw in roster.items()}
+
+
+def _dimensions_by_learner(cards: list[MemoryCard]) -> dict[uuid.UUID, set[str]]:
+    """Group the profile dimensions each card moves by the learner it belongs to."""
+    by_learner: dict[uuid.UUID, set[str]] = defaultdict(set)
+    for card in cards:
+        for c in card.contributions:
+            by_learner[card.learner_id].add(c.index_key)
+    return by_learner
 
 
 async def _persist_cards(cards: list[MemoryCard], extractor_version: str) -> None:

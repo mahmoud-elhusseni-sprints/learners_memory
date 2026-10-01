@@ -82,6 +82,12 @@ class MemoryCardDraft(BaseModel):
     card_type: CardType
     title: str = Field(max_length=120)
     content: str
+    subject_label: str | None = Field(
+        None,
+        description="Which speaker this card is about, for multi-subject sources "
+        "(e.g. a meeting transcript). Resolved to a learner id server-side; "
+        "left null for single-learner sources.",
+    )
     evidence_quote: str | None = None
     sentiment: Literal["positive", "neutral", "negative"] | None = None
     contributions: list[Contribution] = Field(default_factory=list)

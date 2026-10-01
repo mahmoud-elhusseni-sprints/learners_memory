@@ -1,0 +1,11 @@
+Meeting held at: {{ occurred_at }}
+{% if meeting_type %}Meeting type: {{ meeting_type }}{% endif %}
+{% if title %}Title: {{ title }}{% endif %}
+Learner speakers to analyse: {{ participants }}
+
+--- TRANSCRIPT SEGMENT ---
+{{ chunk }}
+--- END TRANSCRIPT SEGMENT ---
+
+Return one entry per learner speaker.
+Return JSON matching the MeetingAnalysis schema.

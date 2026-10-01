@@ -18,6 +18,7 @@ celery_app = Celery(
         "learner_memory.workers.tasks.ingest",
         "learner_memory.workers.tasks.profile",
         "learner_memory.workers.tasks.maintenance",
+        "learner_memory.workers.tasks.lms",
     ],
 )
 
@@ -32,6 +33,8 @@ celery_app.conf.update(
         "extract.*": {"queue": "extract"},
         "profile.*": {"queue": "profile"},
         "maintenance.*": {"queue": "maintenance"},
+        # Short I/O-bound syncs; the ingest workers already consume this queue.
+        "lms.*": {"queue": "ingest"},
     },
     result_expires=86400,
     broker_transport_options={"visibility_timeout": 3600},
