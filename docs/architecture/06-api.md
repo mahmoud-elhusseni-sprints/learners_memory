@@ -106,15 +106,19 @@ The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
 
 - `user_id` is matched to `learner.external_id`. No match is a `404`
   ("not registered yet") — register the learner with its `external_id` first.
-  **The event is then dropped**: the webhook is the only sender of
-  `lms.sync_learner_profile`, and registration does not pull the profile, so the
+  **The event is then dropped**: the webhook is the only sender of the
+  `lms.sync_*` tasks, and registration does not pull from the LMS, so the
   update is lost unless the LMS redelivers the `404`. Register before the LMS
   starts sending.
 - `api_url`'s `include=` only selects the sync. It is never requested: the
   worker builds the URL from `LMS_BASE_URL`, so the key only goes to the LMS.
-- `include=profile` ("User updated", "users_metas created") queues
-  `lms.sync_learner_profile`. Other includes are acknowledged as `ignored`
-  until their syncs exist.
+- Every learner event arrives on this one endpoint; `include=` picks the sync:
+
+  | `include=` | LMS trigger | Sync |
+  |---|---|---|
+  | `profile` | User updated, users_metas created | `lms.sync_learner_profile` |
+  | `enrollments,progress` (+ body `journey_id`, required) | JourneyLearner created, cached journey progress changed | `lms.sync_learner_journey` |
+  | anything else (e.g. `forms`) | — | acknowledged as `ignored` |
 
 The sync reads `…/learners/{user_id}/context?include=profile` and mirrors the
 personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
@@ -123,6 +127,17 @@ snapshot's `personal` section with a `profile_version` bump. It is keyed on
 `event_id` (a redelivery is a no-op) and skips LMS data older than what was
 last applied (`external_updated_at`). Fields outside the mapping — including
 the financial ones the LMS sends — are dropped at parse time.
+
+The journey sync reads `…/context?include=enrollments,progress&journey_id=…`.
+The LMS journey is the learner's `learning_journey` (created on first sight
+from its enrollment) and each program in it a `journey_step` of kind `program`.
+Enrollment fields and progress are applied separately, each skipped when older
+than the last applied (`enrollment_updated_at`, `progress_updated_at`).
+`progress_percent` is stored as a 0..1 fraction (4 places, half up); program
+counters are items *completed* and land in the step's `*_completed` columns.
+Step `status` stays null — the LMS sends no totals, so completion is unknown —
+and steps are never removed. The snapshot's `career.journeys` is rebuilt from
+the tables with a `profile_version` bump.
 
 ### Memory (scope `memory:read`)
 ```
@@ -142,7 +157,6 @@ GET  /v1/learners/{id}/profile/skills    # 34 general subskills + technical
 GET  /v1/learners/{id}/profile/skills/{slug}/evidence   # → cards → documents
 PATCH/v1/learners/{id}/profile/personal  # human-authored, pins source_of_truth
 PUT  /v1/learners/{id}/career-goal
-PATCH/v1/learners/{id}/journey/steps/{step_id}
 POST /v1/learners/{id}/profile/recompute # 202, force synthesis
 GET  /v1/learners/{id}/profile/history   # assessment timeline per skill
 ```
@@ -185,9 +199,12 @@ GET  /healthz  /readyz  /metrics
   },
   "career": {
     "goal": {"target_role": "ML Engineer", "target_date": "2027-06-01", ...},
-    "journey": {"name": "...", "progress": 0.38,
-                "steps": [{"title": "...", "status": "done",
-                           "completed_at": "...", "evidence_card_ids": [...]}]}
+    "journeys": [                       // written by the LMS journey sync
+      { "external_id": 1654, "name": null, "slug": "...", "public_url": "...",
+        "status": "in_progress", "blocked": false, "manual_added": false,
+        "started_at": "...", "graduated_at": null, "progress": 0.38,
+        "steps": [{"external_id": 2001668, "kind": "program", "title": null,
+                   "status": null, "completed": {"videos_completed": 3, ...}}]}]
   }
 }
 ```

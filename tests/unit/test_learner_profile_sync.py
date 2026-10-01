@@ -12,11 +12,8 @@ from datetime import UTC, datetime
 import pytest
 
 from learner_memory.db.models.learner import Learner, LearnerPersonalData, LearnerProfile
-from learner_memory.services.learner_profile_sync import (
-    LearnerProfileSync,
-    PersonalInfoUpdate,
-    SyncOutcome,
-)
+from learner_memory.services.external_sync import SyncOutcome
+from learner_memory.services.learner_profile_sync import LearnerProfileSync, PersonalInfoUpdate
 
 ORG = uuid.UUID("11111111-1111-1111-1111-111111111111")
 LEARNER = uuid.UUID("33333333-3333-3333-3333-333333333333")

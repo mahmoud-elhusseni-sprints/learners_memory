@@ -96,6 +96,34 @@ def test_profile_event_for_a_registered_learner_is_queued(queued):
     })]
 
 
+@pytest.mark.parametrize("event_name", ["content.created", "content.updated"])
+def test_journey_event_is_queued_with_its_journey(queued, event_name):
+    """JourneyLearner created and cached journey progress changed share one shape."""
+    client = build_client(FakeLearners(LMS_USER_ID))
+    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654,
+                     event=event_name)
+
+    resp = client.post(URL, json=event, headers=headers())
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "queued"
+    assert queued == [("lms.sync_learner_journey", {
+        "event_id": EVENT_ID,
+        "external_id": 90232436,
+        "organization_id": "11111111-1111-1111-1111-111111111111",
+        "journey_id": 1654,
+    })]
+
+
+def test_journey_event_without_journey_id_is_rejected(queued):
+    client = build_client(FakeLearners(LMS_USER_ID))
+
+    resp = client.post(URL, json=an_event(include="enrollments%2Cprogress"), headers=headers())
+
+    assert resp.status_code == 422
+    assert queued == []
+
+
 def test_api_url_host_never_reaches_the_sync(queued):
     """The sync builds its own URL from LMS_BASE_URL; a hostile api_url is inert."""
     client = build_client(FakeLearners(LMS_USER_ID))
@@ -155,8 +183,7 @@ def test_unregistered_learner_is_reported_not_registered(queued):
 
 def test_event_for_data_not_synced_yet_is_ignored(queued):
     client = build_client(FakeLearners(LMS_USER_ID))
-    event = an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654,
-                     event="content.created")
+    event = an_event(include="forms&form_id=44844", form_id=44844, event="content.created")
 
     resp = client.post(URL, json=event, headers=headers())
 

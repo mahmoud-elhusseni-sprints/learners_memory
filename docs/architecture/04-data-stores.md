@@ -102,14 +102,29 @@ career_goal(
   id uuid pk, learner_id uuid, title text, target_role text,
   target_date date null, motivation text, status text, details jsonb);
 
-learning_journey(
-  id uuid pk, learner_id uuid, career_goal_id uuid, name text,
-  status text, progress numeric, plan jsonb);
+learning_journey(                       -- the journey the LMS assigned; one row per LMS journey
+  id uuid pk, learner_id uuid, career_goal_id uuid,
+  external_id bigint null,              -- LMS journey_id; unique(learner_id, external_id)
+  name text null,                       -- the LMS sends no title yet
+  slug text, public_url text,
+  status text,                          -- LMS value verbatim (e.g. in_progress)
+  blocked bool, manual_added bool, started_at timestamptz, graduated_at timestamptz,
+  progress numeric,                     -- 0..1 fraction (LMS sends a percentage)
+  plan jsonb,
+  enrollment_updated_at timestamptz,    -- LMS change times: stale guards per part
+  progress_updated_at timestamptz);
 
-journey_step(
-  id uuid pk, journey_id uuid, ord int, title text, kind text,
-  status text,                          -- planned|in_progress|done|skipped
-  completed_at timestamptz null, evidence_card_ids uuid[], details jsonb);
+journey_step(                           -- a program within the journey; one row per LMS program
+  id uuid pk, journey_id uuid,
+  external_id bigint null,              -- LMS program_id; unique(journey_id, external_id)
+  ord int, title text null, kind text,  -- kind 'program' for LMS steps
+  status text null,                     -- planned|in_progress|done|skipped; null = unknown
+  completed_at timestamptz null, evidence_card_ids uuid[], details jsonb,
+  files_completed int, videos_completed int, text_lessons_completed int,
+  live_sessions_completed int, recorded_sessions_completed int, codelabs_completed int,
+  quizzes_completed int, tasks_completed int, regular_projects_completed int,
+  final_projects_completed int, peer_reviews_completed int,
+  ai_interviews_completed int);         -- items completed in the program (LMS counters)
 
 learner_profile(                         -- denormalized read model, 1 row/learner
   learner_id uuid pk, organization_id uuid,

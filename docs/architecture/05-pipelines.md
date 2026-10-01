@@ -71,7 +71,9 @@ profile.recompute_profile(learner_id, dimensions=None)
    │     → guard: level can rise at most 1 per recompute unless a
    │       high-salience assessment card justifies more (anti-flip-flop)
    │     → INSERT skill_assessment (old row superseded=true)
-   ├─ career: recompute journey step statuses from milestone cards
+   ├─ career: attach milestone cards to journey steps as evidence_card_ids.
+   │   Journey and step status/progress are owned by the LMS journey sync
+   │   (06-api.md, LMS webhooks) and never written here.
    ├─ personal data: apply `fact` cards through source-precedence rules
    │   (self_report > cv > inferred; human edits always win and are pinned)
    ├─ rebuild learner_profile.snapshot, bump profile_version

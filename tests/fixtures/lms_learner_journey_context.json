@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "message": "Success",
+  "data": {
+    "user_id": 90232436,
+    "last_updated_at": "2026-09-16T05:18:08+03:00",
+    "enrollments": [
+      {
+        "journey_id": 1654,
+        "journey_slug": "sint-aut-aut-repellendus-ipsam-iusto-aliquid",
+        "status": "in_progress",
+        "blocked": false,
+        "manual_added": false,
+        "start_date": "2026-09-16T05:18:05+03:00",
+        "graduation_date": null,
+        "last_updated_at": "2026-09-16T05:18:05+03:00",
+        "public_url": "http://127.0.0.1:8000/journeys/sint-aut-aut-repellendus-ipsam-iusto-aliquid"
+      }
+    ],
+    "progress": [
+      {
+        "journey_id": 1654,
+        "progress_percent": 0,
+        "last_updated_at": "2026-09-16T05:18:08+03:00",
+        "programs": [
+          {
+            "program_id": 2001668,
+            "counters": {
+              "files_counter": 0,
+              "videos_counter": 0,
+              "text_lessons_counter": 0,
+              "sessions_live_counter": 0,
+              "sessions_record_counter": 0,
+              "codelabs_counter": 0,
+              "quizzes_counter": 0,
+              "tasks_counter": 0,
+              "regular_projects_counter": 0,
+              "final_projects_counter": 0,
+              "peer_reviews_counter": 0,
+              "ai_interviews_counter": 0
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -16,6 +16,9 @@ from learner_memory.core.config import Settings, get_settings
 from learner_memory.integrations.lms.client import LmsClient, LmsError, lms_client
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "lms_learner_profile_context.json"
+JOURNEY_FIXTURE = (
+    Path(__file__).parent.parent / "fixtures" / "lms_learner_journey_context.json"
+)
 LMS_USER_ID = 90232436
 
 
@@ -52,6 +55,29 @@ async def test_requests_profile_context_from_the_configured_lms():
         "https://lms.test/api/learning-companion/v1/learners/90232436/context?include=profile"
     )
     assert seen[0].headers["LC-API-KEY"] == "lc-test-key"
+
+
+async def test_requests_one_journeys_enrollment_and_progress():
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=json.loads(JOURNEY_FIXTURE.read_text(encoding="utf-8")))
+
+    context = await client_for(handler).fetch_learner_journey(LMS_USER_ID, 1654)
+
+    assert [e.journey_id for e in context.enrollments] == [1654]
+    assert seen[0].url.path == "/api/learning-companion/v1/learners/90232436/context"
+    assert dict(seen[0].url.params) == {"include": "enrollments,progress", "journey_id": "1654"}
+    assert seen[0].headers["LC-API-KEY"] == "lc-test-key"
+
+
+async def test_journey_answer_missing_progress_is_a_contract_error():
+    body = json.loads(JOURNEY_FIXTURE.read_text(encoding="utf-8"))
+    del body["data"]["progress"]
+
+    with pytest.raises(LmsError, match=r"data\.progress"):
+        await client_for(responding(200, body)).fetch_learner_journey(LMS_USER_ID, 1654)
 
 
 async def test_base_url_path_prefix_is_kept():

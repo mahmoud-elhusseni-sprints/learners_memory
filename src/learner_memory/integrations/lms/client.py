@@ -14,9 +14,14 @@ from pydantic import ValidationError
 
 from learner_memory.core.config import Settings
 from learner_memory.integrations.lms.schemas import (
+    JOURNEY_INCLUDES,
     PROFILE_INCLUDE,
-    LmsContextEnvelope,
-    LmsLearnerContext,
+    ContextT,
+    LmsEnvelope,
+    LmsJourneyContext,
+    LmsJourneyEnvelope,
+    LmsProfileContext,
+    LmsProfileEnvelope,
 )
 
 API_KEY_HEADER = "LC-API-KEY"
@@ -34,27 +39,44 @@ class LmsClient:
         `lms_client()` builds one from settings."""
         self._http = http
 
-    async def fetch_learner_profile(self, external_id: int) -> LmsLearnerContext:
+    async def fetch_learner_profile(self, external_id: int) -> LmsProfileContext:
         """GET the learner's profile context.
 
         Raises LmsError on a transport failure or timeout, a non-200 status,
         `success: false`, or a body that does not match the contract.
         """
+        body = await self._get_context(external_id, {"include": PROFILE_INCLUDE})
+        return _parse_context(body, LmsProfileEnvelope, external_id)
+
+    async def fetch_learner_journey(self, external_id: int,
+                                    journey_id: int) -> LmsJourneyContext:
+        """GET the learner's enrollment and progress, filtered to one journey.
+
+        Raises LmsError under the same conditions as fetch_learner_profile.
+        """
+        params: dict[str, str | int] = {"include": ",".join(JOURNEY_INCLUDES),
+                                         "journey_id": journey_id}
+        body = await self._get_context(external_id, params)
+        return _parse_context(body, LmsJourneyEnvelope, external_id)
+
+    async def _get_context(self, external_id: int, params: dict[str, str | int]) -> bytes:
         url = _CONTEXT_PATH.format(external_id=external_id)
         try:
-            resp = await self._http.get(url, params={"include": PROFILE_INCLUDE})
+            resp = await self._http.get(url, params=params)
         except httpx.HTTPError as exc:
             raise LmsError(
                 f"LMS request for learner {external_id} failed: {type(exc).__name__}"
             ) from exc
         if resp.status_code != httpx.codes.OK:
             raise LmsError(f"LMS returned HTTP {resp.status_code} for learner {external_id}")
-        return _parse_context(resp.content, external_id)
+        return resp.content
 
 
-def _parse_context(body: bytes, external_id: int) -> LmsLearnerContext:
+def _parse_context(
+    body: bytes, envelope_type: type[LmsEnvelope[ContextT]], external_id: int
+) -> ContextT:
     try:
-        envelope = LmsContextEnvelope.model_validate_json(body)
+        envelope = envelope_type.model_validate_json(body)
     except ValidationError as exc:
         # Field locations only: the offending values may be personal data.
         locations = sorted(".".join(map(str, err["loc"])) for err in exc.errors())
