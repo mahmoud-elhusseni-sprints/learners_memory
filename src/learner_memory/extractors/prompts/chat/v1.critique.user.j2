@@ -1,0 +1,13 @@
+Conversation snapshot time: {{ occurred_at }}
+{% if learner_sender_id %}Learner sender id: {{ learner_sender_id }}{% else %}Messages with sender_role=learner are the learner's messages.{% endif %}
+
+--- SOURCE ---
+{{ chunk }}
+--- END SOURCE ---
+
+--- DRAFTED CARDS ---
+{{ cards }}
+--- END DRAFTED CARDS ---
+
+Return one verdict per card using its bracketed index.
+Return JSON matching the Critique schema.

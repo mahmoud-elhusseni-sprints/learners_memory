@@ -24,7 +24,7 @@ class IngestRequest(BaseModel):
     )
     occurred_at: datetime = Field(description="When the evidence happened, not when sent")
     external_id: str | None = Field(None, description="Producer's id, for dedupe")
-    payload: str | dict | None = None
+    payload: str | dict | list[dict] | None = None
     mime_type: str | None = None
     filename: str | None = None
     program_id: uuid.UUID | None = None

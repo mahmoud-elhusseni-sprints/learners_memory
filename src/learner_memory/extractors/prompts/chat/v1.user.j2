@@ -1,0 +1,23 @@
+Conversation snapshot time: {{ occurred_at }}
+{% if conversation_id %}Conversation id: {{ conversation_id }}{% endif %}
+{% if channel %}Channel: {{ channel }}{% endif %}
+{% if learner_sender_id %}Learner sender id: {{ learner_sender_id }}{% else %}Messages with sender_role=learner are the learner's messages.{% endif %}
+
+{% if analysis %}
+A prior pass produced this analysis. Treat it as a lead; ground every card in the messages.
+--- ANALYSIS ---
+{{ analysis }}
+--- END ANALYSIS ---
+{% endif %}
+{% if guidance %}
+A reviewer rejected the previous drafts. Apply this guidance:
+--- REVIEW ---
+{{ guidance }}
+--- END REVIEW ---
+{% endif %}
+
+--- MESSAGES ---
+{{ chunk }}
+--- END MESSAGES ---
+
+Return JSON matching the ExtractionResult schema.

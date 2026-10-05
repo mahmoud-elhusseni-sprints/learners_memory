@@ -101,6 +101,8 @@ async def receive_learner_event(
                             f"learner with external_id {event.user_id} is not registered yet")
 
     resource = event.resource()
+    # ME: resource is what type of event/resource this webhook is about, 
+    # can be (LmsResource.PROFILE or LmsResource.JOURNEY).
     sync = _SYNCS.get(resource) if resource is not None else None
     if sync is None:
         log.info("lms.webhook_ignored", event_id=str(event.event_id),
