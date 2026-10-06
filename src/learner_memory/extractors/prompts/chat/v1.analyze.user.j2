@@ -1,0 +1,10 @@
+Conversation snapshot time: {{ occurred_at }}
+{% if conversation_id %}Conversation id: {{ conversation_id }}{% endif %}
+{% if channel %}Channel: {{ channel }}{% endif %}
+{% if learner_sender_id %}Learner sender id: {{ learner_sender_id }}{% else %}Messages with sender_role=learner are the learner's messages.{% endif %}
+
+--- MESSAGES ---
+{{ chunk }}
+--- END MESSAGES ---
+
+Return JSON matching the ChatAnalysis schema.

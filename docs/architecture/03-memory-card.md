@@ -76,7 +76,7 @@ Anything the extractor invents that isn't in the taxonomy is dropped into
 | --- | --- | --- |
 | `meeting_transcript` | `meeting_id, title, role_in_meeting, speaker_id, turn_range, participants, duration_s` | observation, skill_evidence, milestone |
 | `task_review` | `task_id, reviewer_id, rubric_scores{}, verdict, iteration, repo_url, diff_stats` | skill_evidence, risk |
-| `chat` | `channel_id, thread_id, message_ids[], counterparties[]` | observation, preference |
+| `chat` | `conversation_id, channel, message_range, message_count, participant_roles, started_at, ended_at` | observation, skill_evidence, risk |
 | `assessment` | `assessment_id, item_results[], score, max_score, duration_s, attempt` | skill_evidence |
 | `cv` | `section, employer, role, period, institution, degree, extracted_skills[]` | fact, skill_evidence |
 | `self_report` | `form_id, question, answer_raw` | preference, goal, fact |
