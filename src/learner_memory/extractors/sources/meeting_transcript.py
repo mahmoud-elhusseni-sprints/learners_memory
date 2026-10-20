@@ -50,7 +50,7 @@ class MeetingTranscriptExtractor(BaseExtractor):
     version = "meeting_transcript@1.0"
     prompt_version = "v1"
     payload_model = MeetingTranscriptPayload
-    chunker = TranscriptChunker(turns_per_chunk=40, overlap=5)
+    chunker = TranscriptChunker(turns_per_chunk=300, overlap=20)
     multi_learner = True
 
     def __init__(self, llm: LLMClient | None = None, prompts: Any = None,
