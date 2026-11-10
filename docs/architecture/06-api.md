@@ -118,7 +118,7 @@ The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
   |---|---|---|
   | `profile` | User updated, users_metas created | `lms.sync_learner_profile` |
   | `enrollments,progress` (+ body `journey_id`, required) | JourneyLearner created, cached journey progress changed | `lms.sync_learner_journey` |
-  | anything else (e.g. `forms`) | — | acknowledged as `ignored` |
+  | anything else (e.g. `forms`), and any `content.deleted` | — | acknowledged as `ignored` |
 
 The sync reads `…/learners/{user_id}/context?include=profile` and mirrors the
 personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
@@ -126,7 +126,10 @@ personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
 snapshot's `personal` section with a `profile_version` bump. It is keyed on
 `event_id` (a redelivery is a no-op) and skips LMS data older than what was
 last applied (`external_updated_at`). Fields outside the mapping — including
-the financial ones the LMS sends — are dropped at parse time.
+the financial ones the LMS used to send — are dropped at parse time. The LMS no
+longer sends `github_id`/`linkedin_id`, so the sync leaves those columns as
+they are. An LMS `404` on any read is final: the sync is recorded as
+`not_found` and not retried.
 
 The journey sync reads `…/context?include=enrollments,progress&journey_id=…`.
 The LMS journey is the learner's `learning_journey` (created on first sight

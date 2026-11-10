@@ -1,9 +1,9 @@
 """LMS shapes at the boundary: the learner webhook envelope, and the part of the
 learner context response we use.
 
-The context response also carries financial and identity fields (IBAN, bank and
-wallet details, identity scans). Nothing here declares them, so they are dropped
-at parse time and never reach storage or logs.
+The context response has carried financial and identity fields (IBAN, bank and
+wallet details, identity scans). Nothing here declares them, so if sent they are
+dropped at parse time and never reach storage or logs.
 
 Response keys are required but nullable: an explicit null clears the stored
 value, while a missing key is a contract break that fails the sync instead of
@@ -14,7 +14,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Generic, Literal, TypeVar
+from typing import Generic, Literal, TypeVar
 from urllib.parse import parse_qs
 
 from pydantic import AnyHttpUrl, AwareDatetime, BaseModel, Field, model_validator
@@ -44,15 +44,16 @@ _PLACE_MAX = 128
 _JOURNEYS_MAX = 100     # per response; the LMS filters to one journey
 _PROGRAMS_MAX = 500     # per journey
 
-# The LMS has sent these ids as null only so far; accept either JSON type.
-_ExternalAccountId = Annotated[str, Field(max_length=255)] | int
+# Only "User deleted" sends this; every other removal (a meta, an attempt, an
+# item) is sent as content.updated, and the read-back simply no longer has it.
+DELETED_EVENT = "content.deleted"
 
 
 class LmsLearnerEvent(BaseModel):
     """The webhook body. It only says *that* something changed; the data itself
     is read back from the LMS."""
 
-    event: Literal["content.created", "content.updated"]
+    event: Literal["content.created", "content.updated", "content.deleted"]
     event_id: uuid.UUID
     entity_type: Literal["learner"]
     user_id: int = Field(gt=0, le=BIGINT_MAX)
@@ -78,6 +79,9 @@ class LmsLearnerEvent(BaseModel):
         """The resource this event is about, or None for one we do not sync."""
         includes = self.includes()
         return next((res for res, needed in _RESOURCE_INCLUDES if needed <= includes), None)
+
+    def is_deletion(self) -> bool:
+        return self.event == DELETED_EVENT
 
 
 class LmsContact(BaseModel):
@@ -115,10 +119,9 @@ class LmsLinks(BaseModel):
 
 
 class LmsProfileFields(BaseModel):
-    """The raw user row. Only the values `basic_info`, `location` and `links` lack."""
+    """An allow-listed slice of the user row. Only the values `basic_info`,
+    `location` and `links` lack."""
 
-    github_id: _ExternalAccountId | None
-    linkedin_id: _ExternalAccountId | None
     job_preference: str | None = Field(max_length=32)
 
 

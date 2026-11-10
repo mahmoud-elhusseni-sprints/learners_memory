@@ -192,6 +192,16 @@ def test_event_for_data_not_synced_yet_is_ignored(queued):
     assert queued == []
 
 
+def test_learner_deleted_event_is_accepted_without_a_profile_sync(queued):
+    """User deleted (captured case 31): the profile read would only 404."""
+    client = build_client(FakeLearners(LMS_USER_ID))
+
+    resp = client.post(URL, json=an_event(event="content.deleted"), headers=headers())
+
+    assert resp.status_code == 202
+    assert ("lms.sync_learner_profile" not in [name for name, _ in queued])
+
+
 def test_mismatched_event_id_header_is_rejected(queued):
     client = build_client(FakeLearners(LMS_USER_ID))
 
@@ -204,7 +214,7 @@ def test_mismatched_event_id_header_is_rejected(queued):
 
 @pytest.mark.parametrize("overrides", [
     {"entity_type": "journey"},
-    {"event": "content.deleted"},
+    {"event": "content.archived"},
     {"user_id": 0},
     {"user_id": "abc"},
     {"event_id": "not-a-uuid"},

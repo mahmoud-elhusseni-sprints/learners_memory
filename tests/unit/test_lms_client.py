@@ -13,7 +13,7 @@ import pytest
 from pydantic import AnyHttpUrl, SecretStr, ValidationError
 
 from learner_memory.core.config import Settings, get_settings
-from learner_memory.integrations.lms.client import LmsClient, LmsError, lms_client
+from learner_memory.integrations.lms.client import LmsClient, LmsError, LmsNotFound, lms_client
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "lms_learner_profile_context.json"
 JOURNEY_FIXTURE = (
@@ -99,6 +99,24 @@ async def test_non_200_status_is_an_lms_error():
         await client_for(responding(503, {})).fetch_learner_profile(LMS_USER_ID)
 
 
+async def test_deleted_learner_is_not_found():
+    """The LMS answers 404 once the user is deleted (captured case 31)."""
+    body = {"success": False, "message": "The requested item could not be found.", "errors": []}
+
+    with pytest.raises(LmsNotFound, match="LMS has no learner 90232436"):
+        await client_for(responding(404, body)).fetch_learner_profile(LMS_USER_ID)
+
+
+async def test_profile_without_lms_account_ids_is_accepted():
+    """The LMS dropped `fields.github_id` and `fields.linkedin_id` from the profile."""
+    body = context_body()
+
+    context = await client_for(responding(200, body)).fetch_learner_profile(LMS_USER_ID)
+
+    assert "github_id" not in body["data"]["profile"]["fields"]
+    assert context.profile.fields.job_preference == "Onsite"
+
+
 async def test_redirect_is_not_followed():
     """Following it would send the LC-API-KEY to wherever the redirect points."""
     def handler(_request):
@@ -152,9 +170,12 @@ async def test_answer_for_a_different_learner_is_rejected():
 
 
 async def test_financial_fields_are_not_kept():
-    context = await client_for(responding(200, context_body())).fetch_learner_profile(
-        LMS_USER_ID
-    )
+    """The LMS used to send these in `fields`; if they come back, they are dropped."""
+    body = context_body()
+    body["data"]["profile"]["fields"].update(
+        payment_type="bank", bank_name="Factory Bank", iban="EG380019000500000000263180002")
+
+    context = await client_for(responding(200, body)).fetch_learner_profile(LMS_USER_ID)
 
     dumped = context.model_dump_json()
     assert "iban" not in dumped

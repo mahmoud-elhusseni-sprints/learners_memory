@@ -61,7 +61,7 @@ def an_update(**overrides) -> PersonalInfoUpdate:
         "bio": "Backend developer", "avatar_url": "https://cdn.test/a.png",
         "timezone": "Africa/Cairo", "preferred_language": "en", "job_preference": "Onsite",
         "github_url": "https://github.com/ardith", "linkedin_url": None, "cv_url": None,
-        "github_id": "4412", "linkedin_id": None, "source_updated_at": APPLIED_AT,
+        "source_updated_at": APPLIED_AT,
     }
     fields.update(overrides)
     return PersonalInfoUpdate(**fields)
@@ -81,8 +81,17 @@ async def test_applies_personal_info_to_the_learner():
     assert (personal.bio, personal.avatar_url) == ("Backend developer", "https://cdn.test/a.png")
     assert (personal.timezone, personal.preferred_language) == ("Africa/Cairo", "en")
     assert personal.job_preference == "Onsite"
-    assert (personal.github_url, personal.github_id) == ("https://github.com/ardith", "4412")
+    assert personal.github_url == "https://github.com/ardith"
     assert personal.external_updated_at == APPLIED_AT
+
+
+async def test_stored_lms_account_ids_are_left_untouched():
+    """The LMS no longer sends github_id/linkedin_id, so a sync must not clear them."""
+    repo = registered(github_id="4412", linkedin_id="li-77")
+
+    await LearnerProfileSync(repo).apply(LMS_USER_ID, an_update())
+
+    assert (repo.personal.github_id, repo.personal.linkedin_id) == ("4412", "li-77")
 
 
 async def test_profile_snapshot_gets_the_personal_section_and_a_new_version():

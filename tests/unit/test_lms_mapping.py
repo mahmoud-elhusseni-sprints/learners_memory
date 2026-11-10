@@ -36,8 +36,6 @@ def test_captured_user_updated_payload_maps_to_personal_info():
         github_url=None,
         linkedin_url=None,
         cv_url=None,
-        github_id=None,
-        linkedin_id=None,
         source_updated_at=datetime(2026, 9, 16, 2, 18, 5, tzinfo=UTC),
     )
 
@@ -55,7 +53,6 @@ def test_filled_in_profile_maps_every_field():
     profile["links"] = {"github": "https://github.com/ardith",
                         "linkedin": "https://linkedin.com/in/ardith",
                         "cv": "https://cdn.test/cv.pdf"}
-    profile["fields"].update(github_id=4412, linkedin_id="li-77")
 
     update = to_personal_info(LmsProfileEnvelope.model_validate(body).data)
 
@@ -66,7 +63,6 @@ def test_filled_in_profile_maps_every_field():
     assert update.github_url == "https://github.com/ardith"
     assert update.linkedin_url == "https://linkedin.com/in/ardith"
     assert update.cv_url == "https://cdn.test/cv.pdf"
-    assert (update.github_id, update.linkedin_id) == ("4412", "li-77")
 
 
 def test_blank_text_is_no_value():

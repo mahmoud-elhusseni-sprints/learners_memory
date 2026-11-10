@@ -4,6 +4,9 @@ These fields change the profile directly: no memory cards and no synthesis. The
 LMS is the system of record for them, so every sync mirrors its current values
 (an LMS null clears ours). The one exception is `learner.display_name`, which the
 registering service sets and an empty LMS name leaves alone.
+
+`github_id` and `linkedin_id` are no longer in the LMS profile, so the sync
+leaves whatever those columns hold untouched.
 """
 from __future__ import annotations
 
@@ -38,8 +41,6 @@ class PersonalInfoUpdate:
     github_url: str | None
     linkedin_url: str | None
     cv_url: str | None
-    github_id: str | None
-    linkedin_id: str | None
     source_updated_at: datetime | None
 
 
@@ -90,8 +91,6 @@ def _write_personal(personal: LearnerPersonalData, update: PersonalInfoUpdate) -
     personal.github_url = update.github_url
     personal.linkedin_url = update.linkedin_url
     personal.cv_url = update.cv_url
-    personal.github_id = update.github_id
-    personal.linkedin_id = update.linkedin_id
     personal.external_updated_at = update.source_updated_at
 
 

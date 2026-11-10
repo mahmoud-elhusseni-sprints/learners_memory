@@ -3,6 +3,7 @@
 Each sync is keyed on the webhook's event id, so a redelivered webhook is a
 no-op once its sync succeeded. A failed read leaves nothing behind (the LMS call
 happens before any write), and the IdempotentTask base retries it with backoff.
+A 404 is final rather than failed: it is recorded as `not_found`, not retried.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from learner_memory.core.logging import get_logger
 from learner_memory.db.repositories.journey import JourneyRepository
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.db.session import unit_of_work
-from learner_memory.integrations.lms.client import LmsError, lms_client
+from learner_memory.integrations.lms.client import LmsError, LmsNotFound, lms_client
 from learner_memory.integrations.lms.mapping import to_journey_update, to_personal_info
 from learner_memory.services.external_sync import SyncOutcome
 from learner_memory.services.learner_journey_sync import LearnerJourneySync
@@ -86,6 +87,10 @@ async def _run_once(
 
     try:
         outcome = await sync()
+    except LmsNotFound:
+        # Final, not a failure: the LMS dropped the learner after sending the
+        # event (the deletion has its own event). Recorded so redeliveries skip.
+        outcome = SyncOutcome.NOT_FOUND
     except Exception as exc:
         await complete(key, error=_describe(exc))
         raise

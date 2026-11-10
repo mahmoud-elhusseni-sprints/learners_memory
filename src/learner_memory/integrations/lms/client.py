@@ -33,6 +33,11 @@ class LmsError(Exception):
     idempotent, so the caller may retry."""
 
 
+class LmsNotFound(LmsError):
+    """The LMS answered 404: it no longer holds the learner (the user was
+    deleted). Retrying cannot change the answer."""
+
+
 class LmsClient:
     def __init__(self, http: httpx.AsyncClient) -> None:
         """`http` must already carry the base URL, LC-API-KEY header and timeout;
@@ -42,8 +47,9 @@ class LmsClient:
     async def fetch_learner_profile(self, external_id: int) -> LmsProfileContext:
         """GET the learner's profile context.
 
-        Raises LmsError on a transport failure or timeout, a non-200 status,
-        `success: false`, or a body that does not match the contract.
+        Raises LmsNotFound on a 404, and LmsError on a transport failure or
+        timeout, any other non-200 status, `success: false`, or a body that does
+        not match the contract.
         """
         body = await self._get_context(external_id, {"include": PROFILE_INCLUDE})
         return _parse_context(body, LmsProfileEnvelope, external_id)
@@ -67,6 +73,8 @@ class LmsClient:
             raise LmsError(
                 f"LMS request for learner {external_id} failed: {type(exc).__name__}"
             ) from exc
+        if resp.status_code == httpx.codes.NOT_FOUND:
+            raise LmsNotFound(f"LMS has no learner {external_id} (HTTP 404)")
         if resp.status_code != httpx.codes.OK:
             raise LmsError(f"LMS returned HTTP {resp.status_code} for learner {external_id}")
         return resp.content

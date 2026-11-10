@@ -49,17 +49,15 @@ def to_personal_info(context: LmsProfileContext) -> PersonalInfoUpdate:
         github_url=_text(profile.links.github),
         linkedin_url=_text(profile.links.linkedin),
         cv_url=_text(profile.links.cv),
-        github_id=_text(profile.fields.github_id),
-        linkedin_id=_text(profile.fields.linkedin_id),
         source_updated_at=context.last_updated_at,
     )
 
 
-def _text(value: str | int | None) -> str | None:
+def _text(value: str | None) -> str | None:
     """Trimmed text; blank means no value."""
     if value is None:
         return None
-    return str(value).strip() or None
+    return value.strip() or None
 
 
 def _iana_timezone(value: str | None, external_id: int) -> str | None:

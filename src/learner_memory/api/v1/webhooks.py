@@ -53,6 +53,14 @@ _SYNCS: dict[LmsResource, _Sync] = {
 }
 
 
+def _sync_for(event: LmsLearnerEvent) -> _Sync | None:
+    """The sync this event needs, or None to acknowledge it as ignored."""
+    if event.is_deletion():
+        return None
+    resource = event.resource()
+    return _SYNCS.get(resource) if resource is not None else None
+
+
 def lms_organization(
     settings: Annotated[Settings, Depends(get_settings)],
     api_key: Annotated[str | None, Header(alias=API_KEY_HEADER)] = None,
@@ -101,11 +109,11 @@ async def receive_learner_event(
                             f"learner with external_id {event.user_id} is not registered yet")
 
     resource = event.resource()
-    # ME: resource is what type of event/resource this webhook is about, 
+    # ME: resource is what type of event/resource this webhook is about,
     # can be (LmsResource.PROFILE or LmsResource.JOURNEY).
-    sync = _SYNCS.get(resource) if resource is not None else None
+    sync = _sync_for(event)
     if sync is None:
-        log.info("lms.webhook_ignored", event_id=str(event.event_id),
+        log.info("lms.webhook_ignored", event_id=str(event.event_id), event_name=event.event,
                  includes=sorted(event.includes()))
         return WebhookAck(event_id=event.event_id, status=WebhookStatus.IGNORED)
 
