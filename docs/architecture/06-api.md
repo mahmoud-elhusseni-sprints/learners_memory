@@ -118,7 +118,12 @@ The LMS posts a thin envelope (`event`, `event_id`, `user_id`, `api_url`,
   |---|---|---|
   | `profile` | User updated, users_metas created | `lms.sync_learner_profile` |
   | `enrollments,progress` (+ body `journey_id`, required) | JourneyLearner created, cached journey progress changed | `lms.sync_learner_journey` |
-  | anything else (e.g. `forms`), and any `content.deleted` | — | acknowledged as `ignored` |
+  | `profile` with `event: content.deleted` | User deleted | `lms.delete_learner` |
+  | anything else (e.g. `forms`, or `content.deleted` with another `include=`) | — | acknowledged as `ignored` |
+
+- A deleted learner (`status = deleted`) gets no further syncs: every event
+  for them is acknowledged as `ignored`. A `content.deleted` for a learner never
+  registered is `ignored` too, not `404`, since there is nothing to delete.
 
 The sync reads `…/learners/{user_id}/context?include=profile` and mirrors the
 personal fields into `learner_personal_data` (an LMS `null` clears ours), sets
@@ -141,6 +146,16 @@ counters are items *completed* and land in the step's `*_completed` columns.
 Step `status` stays null — the LMS sends no totals, so completion is unknown —
 and steps are never removed. The snapshot's `career.journeys` is rebuilt from
 the tables with a `profile_version` bump.
+
+The deletion is a soft delete. Because the wipe cannot be undone, the worker
+first confirms that the LMS answers `404` for the user. While it still holds
+them nothing changes and the task fails, so it is retried with backoff and ends
+in `dead_letter` if the user really remains. Once confirmed, `learner.status`
+becomes `deleted`, `display_name` is cleared, `learner_personal_data` is
+replaced with an empty row, and the snapshot loses its `personal` section (with
+a `profile_version` bump). The learner row, memory cards, journeys and the rest
+of the snapshot stay. Every LMS write locks the learner row first and skips a
+deleted learner, so a sync already in flight cannot write the PII back.
 
 ### Memory (scope `memory:read`)
 ```

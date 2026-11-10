@@ -11,7 +11,12 @@ from datetime import UTC, datetime
 
 import pytest
 
-from learner_memory.db.models.learner import Learner, LearnerPersonalData, LearnerProfile
+from learner_memory.db.models.learner import (
+    Learner,
+    LearnerPersonalData,
+    LearnerProfile,
+    LearnerStatus,
+)
 from learner_memory.services.external_sync import SyncOutcome
 from learner_memory.services.learner_profile_sync import LearnerProfileSync, PersonalInfoUpdate
 
@@ -25,7 +30,7 @@ class InMemoryLearners:
     def __init__(self, learner=None, personal=None, profile=None):
         self.learner, self.personal, self.profile = learner, personal, profile
 
-    async def get_by_external_id(self, external_id):
+    async def lock_by_external_id(self, external_id):
         if self.learner is not None and self.learner.external_id == external_id:
             return self.learner
         return None
@@ -162,6 +167,19 @@ async def test_unregistered_external_id_changes_nothing():
 
     assert outcome is SyncOutcome.UNKNOWN_LEARNER
     assert repo.personal.email is None
+
+
+async def test_deleted_learner_gets_no_personal_data_back():
+    """A sync that read the LMS just before the deletion must not restore the PII."""
+    repo = registered()
+    repo.learner.status = LearnerStatus.DELETED
+    repo.learner.display_name = None
+
+    outcome = await LearnerProfileSync(repo).apply(LMS_USER_ID, an_update())
+
+    assert outcome is SyncOutcome.LEARNER_DELETED
+    assert (repo.personal.email, repo.learner.display_name) == (None, None)
+    assert "personal" not in repo.profile.snapshot
 
 
 async def test_learner_without_profile_row_is_an_error():

@@ -10,6 +10,7 @@ class SyncOutcome(StrEnum):
     STALE = "stale"
     UNKNOWN_LEARNER = "unknown_learner"
     NOT_FOUND = "not_found"            # the external system had nothing to apply
+    LEARNER_DELETED = "learner_deleted"  # soft-deleted learner; nothing is written
 
 
 def is_stale(applied_at: datetime | None, incoming_at: datetime | None) -> bool:

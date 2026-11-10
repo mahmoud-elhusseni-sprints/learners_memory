@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from enum import StrEnum
 
 from sqlalchemy import (
     ARRAY, BigInteger, Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Integer,
@@ -15,12 +16,21 @@ from sqlalchemy.orm import Mapped, mapped_column
 from learner_memory.db.base import Base, OrgScoped, Timestamps, UUIDPk
 
 
+class LearnerStatus(StrEnum):
+    ACTIVE = "active"
+    # Soft-deleted because the LMS deleted the user: the row, memory and
+    # journeys stay, personal data is wiped, and LMS syncs skip the learner.
+    DELETED = "deleted"
+
+
 class Learner(Base, OrgScoped, Timestamps):
     """The learner id is *supplied by the caller* at registration and used verbatim
     as the primary key, so ids stay identical across every learn-os service.
 
     `external_id` is the learner's LMS user id. LMS webhooks only carry that id,
-    so it is how an LMS event finds its learner; unique per organization."""
+    so it is how an LMS event finds its learner; unique per organization.
+
+    `status` holds a LearnerStatus value."""
 
     __tablename__ = "learner"
 

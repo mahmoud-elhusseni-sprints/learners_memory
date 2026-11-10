@@ -63,7 +63,8 @@ learner(                                -- id is SUPPLIED BY THE CALLER, stored 
   id uuid pk, organization_id uuid,
   external_id bigint null,              -- LMS user id; unique(organization_id, external_id)
   display_name text,
-  status text, program_id uuid, cohort_id uuid, registered_at timestamptz,
+  status text,                          -- active|deleted (soft delete: LMS user deleted, PII wiped)
+  program_id uuid, cohort_id uuid, registered_at timestamptz,
   metadata jsonb);
 
 learner_personal_data(                  -- PII island, separately encrypted/auditable

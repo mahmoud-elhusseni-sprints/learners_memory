@@ -107,6 +107,24 @@ async def test_deleted_learner_is_not_found():
         await client_for(responding(404, body)).fetch_learner_profile(LMS_USER_ID)
 
 
+async def test_learner_exists_is_false_once_the_lms_answers_404():
+    exists = await client_for(responding(404, {"success": False})).learner_exists(LMS_USER_ID)
+
+    assert exists is False
+
+
+async def test_learner_exists_is_true_even_for_a_body_outside_the_contract():
+    """Presence is the 200; a body we cannot parse must not read as 'deleted'."""
+    exists = await client_for(responding(200, {"unexpected": True})).learner_exists(LMS_USER_ID)
+
+    assert exists is True
+
+
+async def test_learner_exists_cannot_tell_on_a_server_error():
+    with pytest.raises(LmsError, match="HTTP 500"):
+        await client_for(responding(500, {})).learner_exists(LMS_USER_ID)
+
+
 async def test_profile_without_lms_account_ids_is_accepted():
     """The LMS dropped `fields.github_id` and `fields.linkedin_id` from the profile."""
     body = context_body()

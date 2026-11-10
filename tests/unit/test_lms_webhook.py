@@ -14,7 +14,7 @@ from pydantic import AnyHttpUrl, SecretStr
 
 from learner_memory.api.v1 import webhooks
 from learner_memory.core.config import get_settings
-from learner_memory.db.models.learner import Learner
+from learner_memory.db.models.learner import Learner, LearnerStatus
 from learner_memory.db.session import get_session
 
 ORG = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -26,13 +26,15 @@ URL = "/v1/webhooks/lms/learner"
 
 
 class FakeLearners:
-    def __init__(self, *registered_external_ids: int):
+    def __init__(self, *registered_external_ids: int, status: str = LearnerStatus.ACTIVE):
         self.registered = registered_external_ids
+        self.status = status
 
     async def get_by_external_id(self, external_id):
         if external_id not in self.registered:
             return None
-        return Learner(id=LEARNER, organization_id=ORG, external_id=external_id)
+        return Learner(id=LEARNER, organization_id=ORG, external_id=external_id,
+                       status=self.status)
 
 
 @pytest.fixture
@@ -192,14 +194,57 @@ def test_event_for_data_not_synced_yet_is_ignored(queued):
     assert queued == []
 
 
-def test_learner_deleted_event_is_accepted_without_a_profile_sync(queued):
-    """User deleted (captured case 31): the profile read would only 404."""
+def test_learner_deleted_event_queues_the_deletion(queued):
+    """User deleted (captured case 31)."""
     client = build_client(FakeLearners(LMS_USER_ID))
 
     resp = client.post(URL, json=an_event(event="content.deleted"), headers=headers())
 
     assert resp.status_code == 202
-    assert ("lms.sync_learner_profile" not in [name for name, _ in queued])
+    assert resp.json()["status"] == "queued"
+    assert queued == [("lms.delete_learner", {
+        "event_id": EVENT_ID,
+        "external_id": 90232436,
+        "organization_id": "11111111-1111-1111-1111-111111111111",
+    })]
+
+
+def test_deletion_of_an_unregistered_learner_is_ignored_not_404(queued):
+    """A 404 would make the LMS retry a deletion that has nothing to delete."""
+    client = build_client(FakeLearners())
+
+    resp = client.post(URL, json=an_event(event="content.deleted"), headers=headers())
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "ignored"
+    assert queued == []
+
+
+@pytest.mark.parametrize("event", [
+    an_event(),
+    an_event(event="content.deleted"),
+    an_event(include="enrollments%2Cprogress&journey_id=1654", journey_id=1654),
+])
+def test_any_event_for_a_deleted_learner_is_ignored(queued, event):
+    client = build_client(FakeLearners(LMS_USER_ID, status=LearnerStatus.DELETED))
+
+    resp = client.post(URL, json=event, headers=headers())
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "ignored"
+    assert queued == []
+
+
+def test_deletion_of_anything_but_the_profile_is_ignored(queued):
+    """The LMS sends every other removal as content.updated; this shape is unexpected."""
+    client = build_client(FakeLearners(LMS_USER_ID))
+    event = an_event(include="items&item_type=quiz&item_id=925", event="content.deleted")
+
+    resp = client.post(URL, json=event, headers=headers())
+
+    assert resp.status_code == 202
+    assert resp.json()["status"] == "ignored"
+    assert queued == []
 
 
 def test_mismatched_event_id_header_is_rejected(queued):

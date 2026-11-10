@@ -1,4 +1,5 @@
-"""LMS learner webhook follow-ups: read the learner's context and apply it.
+"""LMS learner webhook follow-ups: read the learner's context and apply it, or
+soft-delete a learner the LMS deleted.
 
 Each sync is keyed on the webhook's event id, so a redelivered webhook is a
 no-op once its sync succeeded. A failed read leaves nothing behind (the LMS call
@@ -18,6 +19,7 @@ from learner_memory.db.session import unit_of_work
 from learner_memory.integrations.lms.client import LmsError, LmsNotFound, lms_client
 from learner_memory.integrations.lms.mapping import to_journey_update, to_personal_info
 from learner_memory.services.external_sync import SyncOutcome
+from learner_memory.services.learner_deletion import LearnerDeletion
 from learner_memory.services.learner_journey_sync import LearnerJourneySync
 from learner_memory.services.learner_profile_sync import LearnerProfileSync
 from learner_memory.workers.celery_app import celery_app
@@ -27,6 +29,7 @@ log = get_logger(__name__)
 
 SYNC_PROFILE_TASK = "lms.sync_learner_profile"
 SYNC_JOURNEY_TASK = "lms.sync_learner_journey"
+DELETE_LEARNER_TASK = "lms.delete_learner"
 
 
 @celery_app.task(name=SYNC_PROFILE_TASK, base=IdempotentTask)
@@ -73,6 +76,36 @@ async def _sync_learner_journey(
 
     args = {"event_id": str(event_id), "external_id": external_id, "journey_id": journey_id}
     return await _run_once(SYNC_JOURNEY_TASK, args, sync)
+
+
+@celery_app.task(name=DELETE_LEARNER_TASK, base=IdempotentTask)
+def delete_learner(event_id: str, external_id: int, organization_id: str) -> dict:
+    return run_async(
+        _delete_learner(uuid.UUID(event_id), external_id, uuid.UUID(organization_id))
+    )
+
+
+async def _delete_learner(
+    event_id: uuid.UUID, external_id: int, organization_id: uuid.UUID
+) -> dict:
+    """Soft-delete the learner once the LMS confirms the user is gone.
+
+    The wipe cannot be undone, so a deletion event is trusted only when the LMS
+    answers 404. While it still holds the user nothing changes and the task
+    fails, so it is retried with backoff (the event may have outrun the LMS's
+    own commit) and dead-lettered if the user really is still there.
+    """
+    async def sync() -> SyncOutcome:
+        async with lms_client(get_settings()) as lms:
+            still_in_lms = await lms.learner_exists(external_id)
+        if still_in_lms:
+            raise LmsError(f"LMS still holds learner {external_id}; deletion not confirmed")
+        async with unit_of_work() as session:
+            deletion = LearnerDeletion(LearnerRepository(session, organization_id))
+            return await deletion.apply(external_id)
+
+    args = {"event_id": str(event_id), "external_id": external_id}
+    return await _run_once(DELETE_LEARNER_TASK, args, sync)
 
 
 async def _run_once(

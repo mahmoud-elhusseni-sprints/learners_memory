@@ -17,12 +17,17 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from learner_memory.api.deps import SessionDep
 from learner_memory.core.config import Settings, get_settings
 from learner_memory.core.logging import get_logger
+from learner_memory.db.models.learner import LearnerStatus
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.integrations.lms.client import API_KEY_HEADER
 from learner_memory.integrations.lms.schemas import LmsLearnerEvent, LmsResource
 from learner_memory.schemas.webhook import WebhookAck, WebhookStatus
 from learner_memory.workers.celery_app import celery_app
-from learner_memory.workers.tasks.lms import SYNC_JOURNEY_TASK, SYNC_PROFILE_TASK
+from learner_memory.workers.tasks.lms import (
+    DELETE_LEARNER_TASK,
+    SYNC_JOURNEY_TASK,
+    SYNC_PROFILE_TASK,
+)
 
 router = APIRouter(prefix="/webhooks/lms", tags=["webhooks"])
 log = get_logger(__name__)
@@ -53,11 +58,15 @@ _SYNCS: dict[LmsResource, _Sync] = {
 }
 
 
+_DELETE_LEARNER = _Sync(DELETE_LEARNER_TASK, _no_extra_kwargs)
+
+
 def _sync_for(event: LmsLearnerEvent) -> _Sync | None:
     """The sync this event needs, or None to acknowledge it as ignored."""
-    if event.is_deletion():
-        return None
     resource = event.resource()
+    if event.is_deletion():
+        # Only "User deleted" (include=profile) is sent as a deletion.
+        return _DELETE_LEARNER if resource is LmsResource.PROFILE else None
     return _SYNCS.get(resource) if resource is not None else None
 
 
@@ -95,18 +104,24 @@ async def receive_learner_event(
     """Accept a learner event and queue the sync; the LMS is read off the request path.
 
     404 when no learner in the organization holds `user_id` as its external id:
-    the learner must be registered with that external id first. Events for data
-    not synced yet are acknowledged as `ignored` so the LMS does not retry them.
+    the learner must be registered with that external id first. Acknowledged as
+    `ignored`, so the LMS does not retry them: events for data not synced yet,
+    any event for a deleted learner, and a deletion of a learner never registered.
     """
     if event_id_header is not None and event_id_header != event.event_id:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
                             f"{EVENT_ID_HEADER} does not match the body's event_id")
 
-    if await learners.get_by_external_id(event.user_id) is None:
+    learner = await learners.get_by_external_id(event.user_id)
+    if learner is None and not event.is_deletion():
         log.info("lms.webhook_unknown_learner", event_id=str(event.event_id),
                  external_id=event.user_id)
         raise HTTPException(status.HTTP_404_NOT_FOUND,
                             f"learner with external_id {event.user_id} is not registered yet")
+    if learner is None or learner.status == LearnerStatus.DELETED:
+        log.info("lms.webhook_learner_gone", event_id=str(event.event_id),
+                 external_id=event.user_id, registered=learner is not None)
+        return _ignored(event)
 
     resource = event.resource()
     # ME: resource is what type of event/resource this webhook is about,
@@ -115,7 +130,7 @@ async def receive_learner_event(
     if sync is None:
         log.info("lms.webhook_ignored", event_id=str(event.event_id), event_name=event.event,
                  includes=sorted(event.includes()))
-        return WebhookAck(event_id=event.event_id, status=WebhookStatus.IGNORED)
+        return _ignored(event)
 
     celery_app.send_task(sync.task, kwargs={
         "event_id": str(event.event_id),
@@ -124,5 +139,9 @@ async def receive_learner_event(
         **sync.extra_kwargs(event),
     })
     log.info("lms.webhook_queued", event_id=str(event.event_id), external_id=event.user_id,
-             resource=resource)
+             resource=resource, task=sync.task)
     return WebhookAck(event_id=event.event_id, status=WebhookStatus.QUEUED)
+
+
+def _ignored(event: LmsLearnerEvent) -> WebhookAck:
+    return WebhookAck(event_id=event.event_id, status=WebhookStatus.IGNORED)

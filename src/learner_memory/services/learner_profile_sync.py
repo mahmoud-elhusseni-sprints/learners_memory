@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from learner_memory.db.models.learner import LearnerPersonalData
+from learner_memory.db.models.learner import LearnerPersonalData, LearnerStatus
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.services.external_sync import SyncOutcome, is_stale
 
@@ -50,14 +50,17 @@ class LearnerProfileSync:
 
     async def apply(self, external_id: int, update: PersonalInfoUpdate) -> SyncOutcome:
         """Write `update` to the learner holding `external_id`, within the caller's
-        transaction. Row locks serialize concurrent syncs for the same learner.
+        transaction. Row locks serialize concurrent syncs (and a deletion) for the
+        same learner; a deleted learner is left untouched.
 
         Raises RuntimeError if the learner lacks the personal-data or profile row
         that registration always creates.
         """
-        learner = await self._learners.get_by_external_id(external_id)
+        learner = await self._learners.lock_by_external_id(external_id)
         if learner is None:
             return SyncOutcome.UNKNOWN_LEARNER
+        if learner.status == LearnerStatus.DELETED:
+            return SyncOutcome.LEARNER_DELETED
 
         personal = await self._learners.lock_personal_data(learner.id)
         profile = await self._learners.lock_profile(learner.id)

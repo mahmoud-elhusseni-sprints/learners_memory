@@ -17,6 +17,7 @@ from learner_memory.db.models.learner import (
     JourneyStep,
     Learner,
     LearnerProfile,
+    LearnerStatus,
     LearningJourney,
 )
 from learner_memory.services.external_sync import SyncOutcome
@@ -43,7 +44,7 @@ class InMemoryLearners:
         self.learner = Learner(id=LEARNER, organization_id=ORG, external_id=LMS_USER_ID)
         self.profile = profile
 
-    async def get_by_external_id(self, external_id):
+    async def lock_by_external_id(self, external_id):
         return self.learner if external_id == LMS_USER_ID else None
 
     async def lock_profile(self, learner_id):
@@ -262,6 +263,17 @@ async def test_unregistered_learner_changes_nothing():
 
     assert outcome is SyncOutcome.UNKNOWN_LEARNER
     assert journeys.journeys == []
+
+
+async def test_deleted_learner_changes_nothing():
+    sync, learners, journeys = a_sync()
+    learners.learner.status = LearnerStatus.DELETED
+
+    outcome = await sync.apply(LMS_USER_ID, an_update())
+
+    assert outcome is SyncOutcome.LEARNER_DELETED
+    assert journeys.journeys == []
+    assert learners.profile.profile_version == 2
 
 
 async def test_learner_without_profile_row_is_an_error():

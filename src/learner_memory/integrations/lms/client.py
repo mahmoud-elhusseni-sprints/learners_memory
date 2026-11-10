@@ -65,6 +65,18 @@ class LmsClient:
         body = await self._get_context(external_id, params)
         return _parse_context(body, LmsJourneyEnvelope, external_id)
 
+    async def learner_exists(self, external_id: int) -> bool:
+        """Whether the LMS still holds the learner: True on 200, False on 404.
+
+        Reads the profile context without parsing it, so a body that breaks the
+        contract still counts as present. Raises LmsError on anything else.
+        """
+        try:
+            await self._get_context(external_id, {"include": PROFILE_INCLUDE})
+        except LmsNotFound:
+            return False
+        return True
+
     async def _get_context(self, external_id: int, params: dict[str, str | int]) -> bytes:
         url = _CONTEXT_PATH.format(external_id=external_id)
         try:

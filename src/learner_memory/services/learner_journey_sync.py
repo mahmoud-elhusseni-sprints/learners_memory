@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import datetime
 from decimal import Decimal
 
-from learner_memory.db.models.learner import JourneyStep, LearningJourney
+from learner_memory.db.models.learner import JourneyStep, LearnerStatus, LearningJourney
 from learner_memory.db.repositories.journey import JourneyRepository
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.services.external_sync import SyncOutcome, is_stale
@@ -88,12 +88,16 @@ class LearnerJourneySync:
         caller's transaction.
 
         NOT_FOUND when the update is empty, or names a journey we do not have yet
-        without the enrollment needed to create it. Raises RuntimeError if the
-        learner lacks the profile row that registration always creates.
+        without the enrollment needed to create it. A deleted learner is left
+        untouched; the learner row lock keeps a deletion from interleaving.
+        Raises RuntimeError if the learner lacks the profile row that
+        registration always creates.
         """
-        learner = await self._learners.get_by_external_id(learner_external_id)
+        learner = await self._learners.lock_by_external_id(learner_external_id)
         if learner is None:
             return SyncOutcome.UNKNOWN_LEARNER
+        if learner.status == LearnerStatus.DELETED:
+            return SyncOutcome.LEARNER_DELETED
 
         journey = await self._lock_journey(learner.id, update)
         if journey is None:

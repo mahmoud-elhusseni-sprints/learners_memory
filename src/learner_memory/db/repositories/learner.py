@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 
@@ -102,6 +102,32 @@ class LearnerRepository(Repository[Learner]):
         """The learner holding this LMS user id in this org, if registered."""
         res = await self.session.execute(self._scoped().where(Learner.external_id == external_id))
         return res.scalar_one_or_none()
+
+    async def lock_by_external_id(self, external_id: int) -> Learner | None:
+        """get_by_external_id holding SELECT ... FOR UPDATE until the caller's
+        transaction ends, with the row re-read rather than taken from the session.
+
+        Every LMS write to a learner takes this lock first, so a deletion and a
+        sync of the same learner never interleave.
+        """
+        res = await self.session.execute(
+            self._scoped()
+            .where(Learner.external_id == external_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return res.scalar_one_or_none()
+
+    async def reset_personal_data(self, learner_id: uuid.UUID) -> None:
+        """Replace the learner's personal data with an empty row, as registration
+        creates it. Deleting the row rather than nulling columns means a column
+        added later is wiped too. The caller passes an id from an org-scoped lookup.
+        """
+        await self.session.execute(
+            delete(LearnerPersonalData).where(LearnerPersonalData.learner_id == learner_id)
+        )
+        self.session.add(LearnerPersonalData(learner_id=learner_id))
+        await self.session.flush()
 
     async def lock_personal_data(self, learner_id: uuid.UUID) -> LearnerPersonalData | None:
         """SELECT ... FOR UPDATE, held until the caller's transaction ends.
