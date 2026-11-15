@@ -20,4 +20,8 @@ def test_beat_schedule_does_not_dispatch_the_unimplemented_profile_recompute():
 def test_beat_schedule_keeps_the_maintenance_jobs():
     scheduled = {entry["task"] for entry in celery_app.conf.beat_schedule.values()}
 
-    assert scheduled == {"maintenance.retry_failed_documents", "maintenance.reconcile_vectors"}
+    assert scheduled == {
+        "maintenance.retry_failed_documents",
+        "maintenance.resolve_pending_identity",
+        "maintenance.reconcile_vectors",
+    }

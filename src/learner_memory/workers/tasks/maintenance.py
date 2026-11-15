@@ -67,6 +67,31 @@ def _record_dispatch(doc: RawDocument) -> uuid.UUID:
     return doc.id
 
 
+@celery_app.task(name="maintenance.resolve_pending_identity", base=IdempotentTask)
+def resolve_pending_identity(batch_size: int = 100) -> dict:
+    return run_async(_resolve_pending_identity(batch_size))
+
+
+async def _resolve_pending_identity(batch_size: int) -> dict:
+    """Extract parked documents whose learner has registered since ingest.
+
+    Bounded: only documents with a now-registered learner are selected, and
+    each leaves `pending_identity` when released, so it is dispatched once.
+    """
+    from learner_memory.services.pending_identity import attach_identity, claim_resolvable
+
+    async with unit_of_work() as s:
+        docs = await claim_resolvable(s, batch_size)
+        for doc in docs:
+            await attach_identity(s, doc)
+        doc_ids = [doc.id for doc in docs]
+
+    for doc_id in doc_ids:
+        celery_app.send_task("extract.extract_document", kwargs={"document_id": str(doc_id)})
+    log.info("maintenance.pending_identity_released", count=len(doc_ids))
+    return {"released": len(doc_ids)}
+
+
 @celery_app.task(name="maintenance.reconcile_vectors", base=IdempotentTask)
 def reconcile_vectors(batch_size: int = 500) -> dict:
     return run_async(_reconcile(batch_size))

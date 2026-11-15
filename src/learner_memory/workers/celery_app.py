@@ -56,6 +56,11 @@ celery_app.conf.beat_schedule = {
         "task": "maintenance.retry_failed_documents",
         "schedule": crontab(minute="*/30"),
     },
+    "resolve-pending-identity": {
+        # Releases documents parked until their learner registered.
+        "task": "maintenance.resolve_pending_identity",
+        "schedule": crontab(minute="5,35"),
+    },
     "reconcile-vectors": {
         # Repairs ledger <-> Qdrant drift; the one guard on our only dual write.
         "task": "maintenance.reconcile_vectors",
