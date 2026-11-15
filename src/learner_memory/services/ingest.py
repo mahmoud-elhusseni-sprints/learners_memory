@@ -16,6 +16,7 @@ from learner_memory.db.repositories.document import DocumentRepository
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.schemas.ingest import IngestRequest, IngestResponse
 from learner_memory.schemas.memory_card import SourceType
+from learner_memory.services.document_scope import scope_metadata
 from learner_memory.storage.base import ObjectStorage
 from learner_memory.storage.paths import object_key
 
@@ -79,7 +80,11 @@ class IngestService:
             occurred_at=req.occurred_at,
             received_at=datetime.now(UTC),
             status=status,
-            metadata_={**req.metadata, **identity_meta},
+            metadata_={
+                **req.metadata,
+                **identity_meta,
+                **scope_metadata(req.program_id, req.cohort_id),
+            },
         )
         await self._docs.add(doc)
         log.info("ingest.received", document_id=str(document_id), source=source_type.value,
@@ -99,12 +104,18 @@ class IngestService:
 
         A document with nothing to attribute is parked as `pending_identity` rather
         than extracted — for a meeting that means none of its participants are
-        registered yet.
+        registered yet. The well-formed but unregistered participants are kept
+        under `unresolved_participants` so the pending-identity sweep can attach
+        them once they register.
         """
         if multi_learner:
-            roster = await self._resolve_roster(req.metadata.get("participants", {}))
+            submitted = req.metadata.get("participants", {})
+            roster = await self._resolve_roster(submitted)
             status = "received" if roster else "pending_identity"
-            return None, status, {"participants": {k: str(v) for k, v in roster.items()}}
+            meta = {"participants": {k: str(v) for k, v in roster.items()}}
+            if status == "pending_identity":
+                meta["unresolved_participants"] = unresolved_participants(submitted, roster)
+            return None, status, meta
 
         learner = await self._learners.get(req.learner_id) if req.learner_id else None
         status = "received" if learner else "pending_identity"
@@ -125,3 +136,19 @@ class IngestService:
             if await self._learners.get(learner_id):
                 resolved[str(label)] = learner_id
         return resolved
+
+
+def unresolved_participants(submitted: dict, resolved: dict[str, uuid.UUID]) -> dict[str, str]:
+    """Speaker-label -> learner-id for well-formed ids that did not resolve.
+
+    Malformed ids are left out: no later registration could ever match them.
+    """
+    unresolved: dict[str, str] = {}
+    for label, raw_id in submitted.items():
+        if str(label) in resolved:
+            continue
+        try:
+            unresolved[str(label)] = str(uuid.UUID(str(raw_id)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    return unresolved

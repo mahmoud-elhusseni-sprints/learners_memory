@@ -43,16 +43,23 @@ celery_app.conf.update(
 # Only what the system genuinely cannot run without. Decay, expiry, archive
 # mirroring and full resynthesis are deliberately left out until there is real
 # data to justify their cost — they exist as on-demand admin tasks instead.
+#
+# profile.refresh_stale_profiles is intentionally NOT scheduled: it dispatches
+# profile.recompute_profile, which raises NotImplementedError until the profile
+# synthesizer lands (docs/architecture/05-pipelines.md §5.3). Scheduling it made
+# every stale profile retry five times and dead-letter every 15 minutes, forever.
+# Re-add the entry together with the synthesizer; stale_dimensions keeps
+# accumulating in the meantime, so no recompute signal is lost.
 celery_app.conf.beat_schedule = {
-    "refresh-stale-profiles": {
-        # Picks up debounced recomputes and anything a crashed worker dropped.
-        "task": "profile.refresh_stale_profiles",
-        "schedule": crontab(minute="*/15"),
-    },
     "retry-failed-documents": {
         # Bounded retry of documents that failed extraction (transient LLM/storage).
         "task": "maintenance.retry_failed_documents",
         "schedule": crontab(minute="*/30"),
+    },
+    "resolve-pending-identity": {
+        # Releases documents parked until their learner registered.
+        "task": "maintenance.resolve_pending_identity",
+        "schedule": crontab(minute="5,35"),
     },
     "reconcile-vectors": {
         # Repairs ledger <-> Qdrant drift; the one guard on our only dual write.

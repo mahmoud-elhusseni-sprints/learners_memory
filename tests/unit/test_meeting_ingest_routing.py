@@ -58,6 +58,16 @@ async def test_resolve_identity_parks_meeting_with_no_registered_participants():
     assert meta["participants"] == {}
 
 
+async def test_parked_meeting_keeps_its_unregistered_roster_for_later_resolution():
+    service = _service(set())
+    _, status, meta = await service._resolve_identity(
+        _req(participants={"SPEAKER_01": str(UNREGISTERED), "SPEAKER_02": "not-a-uuid"}),
+        multi_learner=True,
+    )
+    assert status == "pending_identity"
+    assert meta["unresolved_participants"] == {"SPEAKER_01": str(UNREGISTERED)}
+
+
 async def test_resolve_identity_receives_meeting_with_a_registered_participant():
     service = _service({LEARNER_A})
     owner, status, meta = await service._resolve_identity(

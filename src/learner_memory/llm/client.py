@@ -50,6 +50,10 @@ class SchemaRepairFailed(RuntimeError):
     pass
 
 
+class EmbeddingDimensionMismatch(RuntimeError):
+    """The embedding model returned vectors the Qdrant collection cannot store."""
+
+
 class LLMClient:
     """Thin async facade over the proxy. One instance per process."""
 
@@ -125,19 +129,42 @@ class LLMClient:
         raise SchemaRepairFailed(str(last_error))
 
     async def embed(self, texts: list[str], *, trace: TraceContext) -> list[list[float]]:
+        """Embed `texts` at exactly `EMBEDDING_DIM` dimensions.
+
+        `dimensions` is sent explicitly because models such as
+        text-embedding-3-large default to a larger size than the Qdrant
+        collection. Raises EmbeddingDimensionMismatch when the provider ignores
+        it, so a wrong-sized vector never reaches the upsert.
+        """
+        expected = self._s.embedding_dim
         async with self._sem:
             resp = await litellm.aembedding(
                 model=self._s.embedding_model,
                 input=texts,
+                dimensions=expected,
                 api_base=self._s.litellm_base_url,
                 api_key=self._s.litellm_api_key,
                 metadata=trace.as_litellm_metadata(),
             )
-        return [d["embedding"] for d in resp.data]
+        vectors = [d["embedding"] for d in resp.data]
+        wrong = sorted({len(v) for v in vectors if len(v) != expected})
+        if wrong:
+            raise EmbeddingDimensionMismatch(
+                f"{self._s.embedding_model} returned {wrong}-dimensional vectors but "
+                f"EMBEDDING_DIM is {expected}; use a model that supports `dimensions` "
+                f"or set EMBEDDING_DIM to match the model and recreate the collection."
+            )
+        return vectors
+
+
+# litellm's OpenTelemetry exporter to Langfuse. The classic "langfuse" callback
+# imports `langfuse.client`, which the v3 SDK removed; the OTEL one works with
+# langfuse v3 and logs both successes and failures from `litellm.callbacks`.
+LANGFUSE_CALLBACK = "langfuse_otel"
 
 
 def _configure_litellm(s: Settings) -> None:
-    """Wire Langfuse as a litellm callback once per process."""
+    """Wire Langfuse as a litellm callback once per process, only when keys are set."""
     litellm.drop_params = True
     if s.tracing_on:
         import os
@@ -145,10 +172,8 @@ def _configure_litellm(s: Settings) -> None:
         os.environ.setdefault("LANGFUSE_HOST", s.langfuse_host)
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", s.langfuse_public_key or "")
         os.environ.setdefault("LANGFUSE_SECRET_KEY", s.langfuse_secret_key or "")
-        if "langfuse" not in litellm.success_callback:
-            litellm.success_callback.append("langfuse")
-        if "langfuse" not in litellm.failure_callback:
-            litellm.failure_callback.append("langfuse")
+        if LANGFUSE_CALLBACK not in litellm.callbacks:
+            litellm.callbacks.append(LANGFUSE_CALLBACK)
 
 
 _client: LLMClient | None = None
