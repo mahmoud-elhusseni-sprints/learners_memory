@@ -50,6 +50,10 @@ class SchemaRepairFailed(RuntimeError):
     pass
 
 
+class EmbeddingDimensionMismatch(RuntimeError):
+    """The embedding model returned vectors the Qdrant collection cannot store."""
+
+
 class LLMClient:
     """Thin async facade over the proxy. One instance per process."""
 
@@ -125,15 +129,32 @@ class LLMClient:
         raise SchemaRepairFailed(str(last_error))
 
     async def embed(self, texts: list[str], *, trace: TraceContext) -> list[list[float]]:
+        """Embed `texts` at exactly `EMBEDDING_DIM` dimensions.
+
+        `dimensions` is sent explicitly because models such as
+        text-embedding-3-large default to a larger size than the Qdrant
+        collection. Raises EmbeddingDimensionMismatch when the provider ignores
+        it, so a wrong-sized vector never reaches the upsert.
+        """
+        expected = self._s.embedding_dim
         async with self._sem:
             resp = await litellm.aembedding(
                 model=self._s.embedding_model,
                 input=texts,
+                dimensions=expected,
                 api_base=self._s.litellm_base_url,
                 api_key=self._s.litellm_api_key,
                 metadata=trace.as_litellm_metadata(),
             )
-        return [d["embedding"] for d in resp.data]
+        vectors = [d["embedding"] for d in resp.data]
+        wrong = sorted({len(v) for v in vectors if len(v) != expected})
+        if wrong:
+            raise EmbeddingDimensionMismatch(
+                f"{self._s.embedding_model} returned {wrong}-dimensional vectors but "
+                f"EMBEDDING_DIM is {expected}; use a model that supports `dimensions` "
+                f"or set EMBEDDING_DIM to match the model and recreate the collection."
+            )
+        return vectors
 
 
 def _configure_litellm(s: Settings) -> None:
