@@ -37,9 +37,9 @@ def postgres_url():
 
 
 def _migrate(url: str) -> None:
-    from alembic import command
     from alembic.config import Config
 
+    from alembic import command
     from learner_memory.core.config import get_settings
 
     os.environ["DATABASE_URL"] = url

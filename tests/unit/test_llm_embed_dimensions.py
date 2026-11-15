@@ -5,6 +5,8 @@ LLMClient code runs for real.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from learner_memory.core.config import Settings
@@ -27,11 +29,7 @@ class FakeEmbeddingProvider:
         self.calls.append(kwargs)
         dim = kwargs.get("dimensions") if self.honours_dimensions else self.native_dim
         dim = dim or self.native_dim
-
-        class Response:
-            data = [{"embedding": [0.1] * dim} for _ in kwargs["input"]]
-
-        return Response()
+        return SimpleNamespace(data=[{"embedding": [0.1] * dim} for _ in kwargs["input"]])
 
 
 def _client(monkeypatch, provider: FakeEmbeddingProvider) -> LLMClient:
