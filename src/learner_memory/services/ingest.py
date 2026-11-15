@@ -16,6 +16,7 @@ from learner_memory.db.repositories.document import DocumentRepository
 from learner_memory.db.repositories.learner import LearnerRepository
 from learner_memory.schemas.ingest import IngestRequest, IngestResponse
 from learner_memory.schemas.memory_card import SourceType
+from learner_memory.services.document_scope import scope_metadata
 from learner_memory.storage.base import ObjectStorage
 from learner_memory.storage.paths import object_key
 
@@ -79,7 +80,11 @@ class IngestService:
             occurred_at=req.occurred_at,
             received_at=datetime.now(UTC),
             status=status,
-            metadata_={**req.metadata, **identity_meta},
+            metadata_={
+                **req.metadata,
+                **identity_meta,
+                **scope_metadata(req.program_id, req.cohort_id),
+            },
         )
         await self._docs.add(doc)
         log.info("ingest.received", document_id=str(document_id), source=source_type.value,

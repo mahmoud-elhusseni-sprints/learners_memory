@@ -111,7 +111,8 @@ async def _reconcile(batch_size: int) -> dict:
     async with unit_of_work() as s:
         rows = (
             await s.execute(
-                select(MemoryCardRecord)
+                select(MemoryCardRecord, RawDocument.metadata_)
+                .join(RawDocument, RawDocument.id == MemoryCardRecord.source_document_id)
                 .where(
                     or_(
                         MemoryCardRecord.vector_synced_at.is_(None),
@@ -120,8 +121,8 @@ async def _reconcile(batch_size: int) -> dict:
                 )
                 .limit(batch_size)
             )
-        ).scalars().all()
-        pending = [_to_card(r) for r in rows]
+        ).all()
+        pending = [_to_card(rec, doc_metadata) for rec, doc_metadata in rows]
 
     if not pending:
         return {"resynced": 0}
@@ -142,13 +143,18 @@ async def _reconcile(batch_size: int) -> dict:
     return {"resynced": len(pending)}
 
 
-def _to_card(rec: MemoryCardRecord):
+def _to_card(rec: MemoryCardRecord, document_metadata: dict | None):
+    """Rebuild the card for re-indexing; scope comes from its source document."""
     from learner_memory.schemas.memory_card import Contribution, MemoryCard
+    from learner_memory.services.document_scope import read_scope
 
+    program_id, cohort_id = read_scope(document_metadata)
     return MemoryCard(
         id=rec.id,
         organization_id=rec.organization_id,
         learner_id=rec.learner_id,
+        program_id=program_id,
+        cohort_id=cohort_id,
         source_type=rec.source_type,
         source_document_id=rec.source_document_id,
         card_type=rec.card_type,

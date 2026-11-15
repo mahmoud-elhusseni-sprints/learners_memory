@@ -14,6 +14,7 @@ from learner_memory.extractors.base import ExtractionInput
 from learner_memory.extractors.registry import extractor_class, get_extractor
 from learner_memory.llm.client import TraceContext, get_llm_client
 from learner_memory.schemas.memory_card import CardStatus, MemoryCard
+from learner_memory.services.document_scope import read_scope
 from learner_memory.storage.supabase import get_storage
 from learner_memory.vector.qdrant import get_card_index
 from learner_memory.workers.celery_app import celery_app
@@ -66,15 +67,7 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
         raw = await get_storage().get(snapshot["storage_key"])
         extractor = get_extractor(snapshot["source_type"])
         cards = await extractor.run(
-            ExtractionInput(
-                document_id=document_id,
-                organization_id=snapshot["organization_id"],
-                learner_id=None if multi_learner else snapshot["learner_id"],
-                participants=participants,
-                occurred_at=snapshot["occurred_at"],
-                raw=raw,
-                metadata=snapshot["metadata"],
-            )
+            _extraction_input(document_id, snapshot, participants, multi_learner, raw)
         )
 
         if cards:
@@ -108,6 +101,28 @@ async def _extract_document(document_id: uuid.UUID, *, force: bool = False) -> d
                 doc.error = {"message": str(exc)}
         await complete(key, error=str(exc))
         raise
+
+
+def _extraction_input(
+    document_id: uuid.UUID,
+    snapshot: dict,
+    participants: dict[str, uuid.UUID],
+    multi_learner: bool,
+    raw: bytes,
+) -> ExtractionInput:
+    """The extractor's view of one document, including its program/cohort scope."""
+    program_id, cohort_id = read_scope(snapshot["metadata"])
+    return ExtractionInput(
+        document_id=document_id,
+        organization_id=snapshot["organization_id"],
+        learner_id=None if multi_learner else snapshot["learner_id"],
+        participants=participants,
+        program_id=program_id,
+        cohort_id=cohort_id,
+        occurred_at=snapshot["occurred_at"],
+        raw=raw,
+        metadata=snapshot["metadata"],
+    )
 
 
 def _participants(metadata: dict) -> dict[str, uuid.UUID]:
