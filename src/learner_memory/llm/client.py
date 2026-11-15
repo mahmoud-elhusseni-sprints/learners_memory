@@ -157,8 +157,14 @@ class LLMClient:
         return vectors
 
 
+# litellm's OpenTelemetry exporter to Langfuse. The classic "langfuse" callback
+# imports `langfuse.client`, which the v3 SDK removed; the OTEL one works with
+# langfuse v3 and logs both successes and failures from `litellm.callbacks`.
+LANGFUSE_CALLBACK = "langfuse_otel"
+
+
 def _configure_litellm(s: Settings) -> None:
-    """Wire Langfuse as a litellm callback once per process."""
+    """Wire Langfuse as a litellm callback once per process, only when keys are set."""
     litellm.drop_params = True
     if s.tracing_on:
         import os
@@ -166,10 +172,8 @@ def _configure_litellm(s: Settings) -> None:
         os.environ.setdefault("LANGFUSE_HOST", s.langfuse_host)
         os.environ.setdefault("LANGFUSE_PUBLIC_KEY", s.langfuse_public_key or "")
         os.environ.setdefault("LANGFUSE_SECRET_KEY", s.langfuse_secret_key or "")
-        if "langfuse" not in litellm.success_callback:
-            litellm.success_callback.append("langfuse")
-        if "langfuse" not in litellm.failure_callback:
-            litellm.failure_callback.append("langfuse")
+        if LANGFUSE_CALLBACK not in litellm.callbacks:
+            litellm.callbacks.append(LANGFUSE_CALLBACK)
 
 
 _client: LLMClient | None = None
